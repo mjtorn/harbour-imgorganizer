@@ -301,120 +301,12 @@ def scanForImages (folders2scanHOME, folders2scanEXTERN, sdCards2scanEXTERN, sho
                     filteredFilePathList.append( filePath )
                     #pyotherside.send('debugPythonLogs', filePath)
     #filteredFilePathList = [i for n, i in enumerate(filteredFilePathList) if i not in filteredFilePathList[:n]]        # no dublicates check, but unnecessary!!!
-    imagesTotalAmount = len(filteredFilePathList)
+
+    # Do not need the total amount here unless debugging
+    # imagesTotalAmount = len(filteredFilePathList)
     #pyotherside.send('debugPythonLogs', str(imagesTotalAmount) + " images found")
 
-    # scan each file for meta info
-    fileInfoList = []
-
-    for filePath in filteredFilePathList:  # coment for multithreading
-    # def scan4exifInfo(filePath):         # uncomment for multithreading
-        #global someCounter                # uncomment for multithreading
-        someCounter += 1
-        pyotherside.send('scanProgress', someCounter, imagesTotalAmount)
-        estimatedSize = os.stat(filePath).st_size
-
-        # get timestamp from creation date
-        if creationModificationDate == 0:
-            timestampSource = "creationDate"
-            timeMS_created = os.path.getctime(filePath) #file first created in MS since 1970
-
-        # OR get timestamp from modification date
-        elif creationModificationDate == 1:
-            timestampSource = "modificationDate"
-            timeMS_created = os.path.getmtime(filePath) #file last modified in MS since 1970
-
-        # OR get timestamp from parsing fileName
-        else: #creationModificationDate == 2:
-            timestampSource = "parsedFilename"
-            try:
-                try:
-                    match_str = (re.search(r'\d{4}\d{2}\d{2}', str(file))).group()
-                    match_str = match_str[:4] + "-" + match_str[4:]
-                    match_str = match_str[:7] + "-" + match_str[7:]
-                except:
-                    match_str = (re.search(r'\d{4}-\d{2}-\d{2}', str(file))).group()
-                    #pyotherside.send('debugPythonLogs', "This filename is in a different format: " + file)
-
-                #check if monthNr is actually not the dayNr, since some apps create YYYY/MM/DD and other YYYY/DD/MM
-                if int(match_str[5:7]) > 12: # this will be a day then, since months only go up to 12
-                    timeUTC_fromFilename = datetime.datetime.strptime(match_str, '%Y-%d-%m').date()
-                else:
-                    timeUTC_fromFilename = datetime.datetime.strptime(match_str, '%Y-%m-%d').date()
-
-                # get a localized datetime object and convert to timestamp in MS
-                dt = datetime.datetime(
-                    year=timeUTC_fromFilename.year,
-                    month=timeUTC_fromFilename.month,
-                    day=timeUTC_fromFilename.day
-                ).replace(tzinfo=datetime.timezone.utc).astimezone(tz=None)
-                timeMS_created = dt.timestamp()
-
-            except: # creation date = fallback if filename makes no sense
-                timestampSource = "creationDate"
-                timeMS_created = os.path.getctime(filePath) #file first created in MS since 1970
-                #pyotherside.send('debugPythonLogs', "This filename can not be parsed for valid date: " + file)
-
-        # try to find album and creation date time in metadata or filename - if enabled in settings ... ToDo: takes too long!!!
-        foundAlbumTag = "|||"
-        tempTimestampSource = timestampSource
-        tempTimeMS_created = timeMS_created
-        if findExifAlbum == 1: # if we scan for meta data in album
-            # get EXIF date time
-            if filePath.endswith( exifEnabledExtensions ):
-                try:
-                    exif_dict = piexif.load(filePath)
-                    # check in first possible date block
-                    if piexif.ImageIFD.DateTime in exif_dict["0th"]:
-                        value = (exif_dict["0th"][piexif.ImageIFD.DateTime]).decode() # get rid of bytes format
-                        timestampSource = "exifMetadata"
-                        date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
-                        timeMS_created = date_time_obj.timestamp()
-                        #pyotherside.send('debugPythonLogs', "0th found some info: " + str(value) )
-                    # check in second possible date block
-                    elif piexif.ExifIFD.DateTimeOriginal in exif_dict["Exif"]:
-                        value = (exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal]).decode() # get rid of bytes format
-                        timestampSource = "exifMetadata"
-                        date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
-                        timeMS_created = date_time_obj.timestamp()
-                        #pyotherside.send('debugPythonLogs', "EXIF found info: " + str(value) )
-                    else:
-                        timestampSource = tempTimestampSource
-                        timeMS_created = tempTimeMS_created
-                        #pyotherside.send('debugPythonLogs', "EXIF dict empty")
-                except: # in case of error (e.g. non-ascii characters OR "0000:00:00 00:00:00" as value) -> use the date from previous info
-                    timestampSource = tempTimestampSource
-                    timeMS_created = tempTimeMS_created
-                    #pyotherside.send('debugPythonLogs', "EXIF error parsing: " + filePath  )
-
-            # get IPTC album keywords
-            if filePath.endswith( iptcEnabledExtensions ):
-                iptc_keywords = []
-                foundAlbumTag = ""
-                try:
-                    iptc_info = iptcinfo3.IPTCInfo(filePath)
-                    iptc_keywords = iptc_info['keywords']
-                    if len(iptc_keywords) > 0:
-                        for keyword in iptc_keywords:
-                            if isinstance(keyword, bytes):
-                                keyword = keyword.decode()
-                            foundAlbumTag += str(keyword) + ", "
-                        foundAlbumTag = foundAlbumTag[:-2]
-                        #pyotherside.send('debugPythonLogs', foundAlbumTag )
-                    else:
-                        foundAlbumTag = "|||"
-                except:
-                    foundAlbumTag = "|||"
-
-        # get creation date
-        timeUTC_created = datetime.datetime.utcfromtimestamp(timeMS_created)
-        # combine all infos and append to list
-        fileInfoList.append((timeMS_created, filePath, timeUTC_created.year, timeUTC_created.month, timeUTC_created.day, estimatedSize, foundAlbumTag, timestampSource))
-
-    # run above as function with multithreading .. why is it slower than single thread???
-    # with ThreadPoolExecutor() as executor:
-    #     executor.map(scan4exifInfo, filteredFilePathList)
-
+    fileInfoList = scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum)
 
     # sort according to date time direction
     if "0" in showDirection:
@@ -422,16 +314,140 @@ def scanForImages (folders2scanHOME, folders2scanEXTERN, sdCards2scanEXTERN, sho
     else:
         fileInfoList.sort(key=itemgetter(0), reverse=False) # sort list of tuples by first item, requires import itemgetter
 
+    # save some memory
+    dirsToScan = []
+    extCardPathsToScan = []
+
     # sendentire list over to QML
     pyotherside.send('returnSortedImageList2Model', fileInfoList)
 
-    # save some memory
+    return fileInfoList
+
+
+def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):
+    global someCounter
     someCounter = 0
-    dirsToScan = []
-    filteredFilePathList = []
+
+    imagesTotalAmount = len(filteredFilePathList)
+
+    # scan each file for meta info
     fileInfoList = []
-    iptc_keywords = []
-    extCardPathsToScan = []
+
+    # TODO: implement and check cache
+    for filePath in filteredFilePathList:
+        someCounter += 1
+        pyotherside.send('scanProgress', someCounter, imagesTotalAmount)
+        fileInfo = scan4exifInfo(filePath, creationModificationDate, findExifAlbum)
+        fileInfoList.append(fileInfo)
+
+    return fileInfoList
+
+
+def scan4exifInfo(filePath, creationModificationDate, findExifAlbum):
+    estimatedSize = os.stat(filePath).st_size
+
+    # get timestamp from creation date
+    if creationModificationDate == 0:
+        timestampSource = "creationDate"
+        timeMS_created = os.path.getctime(filePath) #file first created in MS since 1970
+
+    # OR get timestamp from modification date
+    elif creationModificationDate == 1:
+        timestampSource = "modificationDate"
+        timeMS_created = os.path.getmtime(filePath) #file last modified in MS since 1970
+
+    # OR get timestamp from parsing fileName
+    else: #creationModificationDate == 2:
+        timestampSource = "parsedFilename"
+        try:
+            try:
+                match_str = (re.search(r'\d{4}\d{2}\d{2}', str(file))).group()
+                match_str = match_str[:4] + "-" + match_str[4:]
+                match_str = match_str[:7] + "-" + match_str[7:]
+            except:
+                match_str = (re.search(r'\d{4}-\d{2}-\d{2}', str(file))).group()
+                #pyotherside.send('debugPythonLogs', "This filename is in a different format: " + file)
+
+            #check if monthNr is actually not the dayNr, since some apps create YYYY/MM/DD and other YYYY/DD/MM
+            if int(match_str[5:7]) > 12: # this will be a day then, since months only go up to 12
+                timeUTC_fromFilename = datetime.datetime.strptime(match_str, '%Y-%d-%m').date()
+            else:
+                timeUTC_fromFilename = datetime.datetime.strptime(match_str, '%Y-%m-%d').date()
+
+            # get a localized datetime object and convert to timestamp in MS
+            dt = datetime.datetime(
+                year=timeUTC_fromFilename.year,
+                month=timeUTC_fromFilename.month,
+                day=timeUTC_fromFilename.day
+            ).replace(tzinfo=datetime.timezone.utc).astimezone(tz=None)
+            timeMS_created = dt.timestamp()
+
+        except: # creation date = fallback if filename makes no sense
+            timestampSource = "creationDate"
+            timeMS_created = os.path.getctime(filePath) #file first created in MS since 1970
+            #pyotherside.send('debugPythonLogs', "This filename can not be parsed for valid date: " + file)
+
+    # try to find album and creation date time in metadata or filename - if enabled in settings ... ToDo: takes too long!!!
+    foundAlbumTag = "|||"
+    tempTimestampSource = timestampSource
+    tempTimeMS_created = timeMS_created
+    if findExifAlbum == 1: # if we scan for meta data in album
+        # get EXIF date time
+        if filePath.endswith( exifEnabledExtensions ):
+            try:
+                exif_dict = piexif.load(filePath)
+                # check in first possible date block
+                if piexif.ImageIFD.DateTime in exif_dict["0th"]:
+                    value = (exif_dict["0th"][piexif.ImageIFD.DateTime]).decode() # get rid of bytes format
+                    timestampSource = "exifMetadata"
+                    date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
+                    timeMS_created = date_time_obj.timestamp()
+                    #pyotherside.send('debugPythonLogs', "0th found some info: " + str(value) )
+                # check in second possible date block
+                elif piexif.ExifIFD.DateTimeOriginal in exif_dict["Exif"]:
+                    value = (exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal]).decode() # get rid of bytes format
+                    timestampSource = "exifMetadata"
+                    date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
+                    timeMS_created = date_time_obj.timestamp()
+                    #pyotherside.send('debugPythonLogs', "EXIF found info: " + str(value) )
+                else:
+                    timestampSource = tempTimestampSource
+                    timeMS_created = tempTimeMS_created
+                    #pyotherside.send('debugPythonLogs', "EXIF dict empty")
+            except: # in case of error (e.g. non-ascii characters OR "0000:00:00 00:00:00" as value) -> use the date from previous info
+                timestampSource = tempTimestampSource
+                timeMS_created = tempTimeMS_created
+                #pyotherside.send('debugPythonLogs', "EXIF error parsing: " + filePath  )
+
+        # get IPTC album keywords
+        if filePath.endswith( iptcEnabledExtensions ):
+            iptc_keywords = []
+            foundAlbumTag = ""
+            try:
+                iptc_info = iptcinfo3.IPTCInfo(filePath)
+                iptc_keywords = iptc_info['keywords']
+                if len(iptc_keywords) > 0:
+                    for keyword in iptc_keywords:
+                        if isinstance(keyword, bytes):
+                            keyword = keyword.decode()
+                        foundAlbumTag += str(keyword) + ", "
+                    foundAlbumTag = foundAlbumTag[:-2]
+                    #pyotherside.send('debugPythonLogs', foundAlbumTag )
+                else:
+                    foundAlbumTag = "|||"
+            except:
+                foundAlbumTag = "|||"
+
+    # get creation date
+    timeUTC_created = datetime.datetime.utcfromtimestamp(timeMS_created)
+    # combine all infos and return to add to list
+    return (timeMS_created, filePath, timeUTC_created.year, timeUTC_created.month, timeUTC_created.day, estimatedSize, foundAlbumTag, timestampSource)
+
+    # run above as function with multithreading .. why is it slower than single thread???
+    # with ThreadPoolExecutor() as executor:
+    #     executor.map(scan4exifInfo, filteredFilePathList)
+
+
 
 
 
