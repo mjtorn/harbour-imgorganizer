@@ -13,6 +13,7 @@ import piexif                       # standalone EXIF metadata
 import piexif.helper
 import subprocess                   # for running shell commands as separate processes
 import zipfile                      # for sharing multiple files at once, e.g. on bluetooth
+import pickle                       # for caching exif scan results between app starts
 try:
     import PIL
     try:
@@ -38,6 +39,7 @@ except ImportError:
 extensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.tif', '.TIF', '.tiff', '.TIFF','.bmp', '.BMP', '.gif', '.GIF')
 exifEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.tif', '.tiff', '.TIF', '.TIFF')
 iptcEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG')
+exifCacheVersion = 1                # bump when the cached tuple layout changes -> forces a clean cache rebuild
 
 
 
@@ -306,6 +308,15 @@ def scanForImages (folders2scanHOME, folders2scanEXTERN, sdCards2scanEXTERN, sho
     # imagesTotalAmount = len(filteredFilePathList)
     #pyotherside.send('debugPythonLogs', str(imagesTotalAmount) + " images found")
 
+    # save some memory
+    dirsToScan = []
+    extCardPathsToScan = []
+
+    fileInfoList = getFileInfoList(filteredFilePathList, showDirection, creationModificationDate, findExifAlbum)
+    return fileInfoList
+
+
+def getFileInfoList(filteredFilePathList, showDirection, creationModificationDate, findExifAlbum):
     fileInfoList = scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum)
 
     # sort according to date time direction
@@ -314,14 +325,16 @@ def scanForImages (folders2scanHOME, folders2scanEXTERN, sdCards2scanEXTERN, sho
     else:
         fileInfoList.sort(key=itemgetter(0), reverse=False) # sort list of tuples by first item, requires import itemgetter
 
-    # save some memory
-    dirsToScan = []
-    extCardPathsToScan = []
-
     # sendentire list over to QML
     pyotherside.send('returnSortedImageList2Model', fileInfoList)
 
     return fileInfoList
+
+
+def exifCachePath():
+    cacheDir = os.environ.get("XDG_CACHE_HOME", str(Path.home()) + "/.cache") + "/harbour-timeline"
+    os.makedirs(cacheDir, exist_ok=True)
+    return cacheDir + "/exifCache.pickle"
 
 
 def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):
@@ -333,28 +346,64 @@ def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):
     # scan each file for meta info
     fileInfoList = []
 
-    # TODO: implement and check cache
+    # load the whole exif cache once, only needed when we scan for meta data
+    # any load problem (missing file, corrupt pickle, other python version, changed layout) -> rebuild from scratch, that keeps the cache clean
+    cachedExifDict = {}
+    if findExifAlbum == 1:
+        try:
+            with open(exifCachePath(), 'rb') as cacheFile:
+                cacheVersion, cachedExifDict = pickle.load(cacheFile)
+            if cacheVersion != exifCacheVersion: # cached tuple layout changed in an app update
+                cachedExifDict = {}
+        except:
+            cachedExifDict = {}
+        if len(cachedExifDict) == 0 and imagesTotalAmount > 0:
+            pyotherside.send('refreshingExifCache')
+
+    newCacheEntries = {}
     for filePath in filteredFilePathList:
         someCounter += 1
         pyotherside.send('scanProgress', someCounter, imagesTotalAmount)
-        fileInfo = scan4exifInfo(filePath, creationModificationDate, findExifAlbum)
+        statResult = os.stat(filePath)
+        cachedExifInfo = None
+        if filePath in cachedExifDict and cachedExifDict[filePath][0] == statResult.st_mtime:
+            cachedExifInfo = (cachedExifDict[filePath][1], cachedExifDict[filePath][2])
+        fileInfo = scan4exifInfo(filePath, creationModificationDate, findExifAlbum, statResult, cachedExifInfo)
         fileInfoList.append(fileInfo)
+        if findExifAlbum == 1 and cachedExifInfo is None:
+            exifTimeMS = fileInfo[0] if fileInfo[7] == "exifMetadata" else 0
+            newCacheEntries[filePath] = (statResult.st_mtime, exifTimeMS, fileInfo[6])
+
+    # add fresh scan results to the cache and drop entries of deleted files
+    if findExifAlbum == 1:
+        scannedPathsSet = set(filteredFilePathList)
+        deadCachePaths = [cachedPath for cachedPath in cachedExifDict if cachedPath not in scannedPathsSet and not os.path.exists(cachedPath)]
+        if len(newCacheEntries) > 0 or len(deadCachePaths) > 0:
+            for cachedPath in deadCachePaths:
+                del cachedExifDict[cachedPath]
+            cachedExifDict.update(newCacheEntries)
+            try:
+                with open(exifCachePath() + ".tmp", 'wb') as cacheFile:
+                    pickle.dump( (exifCacheVersion, cachedExifDict), cacheFile )
+                os.replace(exifCachePath() + ".tmp", exifCachePath()) # atomic, a killed app can not leave a half written cache behind
+            except: # e.g. read-only filesystem -> no cache this time, gets rebuilt on next start
+                pass
 
     return fileInfoList
 
 
-def scan4exifInfo(filePath, creationModificationDate, findExifAlbum):
-    estimatedSize = os.stat(filePath).st_size
+def scan4exifInfo(filePath, creationModificationDate, findExifAlbum, statResult, cachedExifInfo):
+    estimatedSize = statResult.st_size
 
     # get timestamp from creation date
     if creationModificationDate == 0:
         timestampSource = "creationDate"
-        timeMS_created = os.path.getctime(filePath) #file first created in MS since 1970
+        timeMS_created = statResult.st_ctime #file first created in MS since 1970
 
     # OR get timestamp from modification date
     elif creationModificationDate == 1:
         timestampSource = "modificationDate"
-        timeMS_created = os.path.getmtime(filePath) #file last modified in MS since 1970
+        timeMS_created = statResult.st_mtime #file last modified in MS since 1970
 
     # OR get timestamp from parsing fileName
     else: #creationModificationDate == 2:
@@ -384,7 +433,7 @@ def scan4exifInfo(filePath, creationModificationDate, findExifAlbum):
 
         except: # creation date = fallback if filename makes no sense
             timestampSource = "creationDate"
-            timeMS_created = os.path.getctime(filePath) #file first created in MS since 1970
+            timeMS_created = statResult.st_ctime #file first created in MS since 1970
             #pyotherside.send('debugPythonLogs', "This filename can not be parsed for valid date: " + file)
 
     # try to find album and creation date time in metadata or filename - if enabled in settings ... ToDo: takes too long!!!
@@ -392,51 +441,59 @@ def scan4exifInfo(filePath, creationModificationDate, findExifAlbum):
     tempTimestampSource = timestampSource
     tempTimeMS_created = timeMS_created
     if findExifAlbum == 1: # if we scan for meta data in album
-        # get EXIF date time
-        if filePath.endswith( exifEnabledExtensions ):
-            try:
-                exif_dict = piexif.load(filePath)
-                # check in first possible date block
-                if piexif.ImageIFD.DateTime in exif_dict["0th"]:
-                    value = (exif_dict["0th"][piexif.ImageIFD.DateTime]).decode() # get rid of bytes format
-                    timestampSource = "exifMetadata"
-                    date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
-                    timeMS_created = date_time_obj.timestamp()
-                    #pyotherside.send('debugPythonLogs', "0th found some info: " + str(value) )
-                # check in second possible date block
-                elif piexif.ExifIFD.DateTimeOriginal in exif_dict["Exif"]:
-                    value = (exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal]).decode() # get rid of bytes format
-                    timestampSource = "exifMetadata"
-                    date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
-                    timeMS_created = date_time_obj.timestamp()
-                    #pyotherside.send('debugPythonLogs', "EXIF found info: " + str(value) )
-                else:
+        # use cached values from a previous scan, no need to read the file again
+        if cachedExifInfo is not None:
+            if cachedExifInfo[0] != 0: # 0 means no exif datetime in this file
+                timestampSource = "exifMetadata"
+                timeMS_created = cachedExifInfo[0]
+            foundAlbumTag = cachedExifInfo[1]
+
+        else:
+            # get EXIF date time
+            if filePath.endswith( exifEnabledExtensions ):
+                try:
+                    exif_dict = piexif.load(filePath)
+                    # check in first possible date block
+                    if piexif.ImageIFD.DateTime in exif_dict["0th"]:
+                        value = (exif_dict["0th"][piexif.ImageIFD.DateTime]).decode() # get rid of bytes format
+                        timestampSource = "exifMetadata"
+                        date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
+                        timeMS_created = date_time_obj.timestamp()
+                        #pyotherside.send('debugPythonLogs', "0th found some info: " + str(value) )
+                    # check in second possible date block
+                    elif piexif.ExifIFD.DateTimeOriginal in exif_dict["Exif"]:
+                        value = (exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal]).decode() # get rid of bytes format
+                        timestampSource = "exifMetadata"
+                        date_time_obj = datetime.datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S')
+                        timeMS_created = date_time_obj.timestamp()
+                        #pyotherside.send('debugPythonLogs', "EXIF found info: " + str(value) )
+                    else:
+                        timestampSource = tempTimestampSource
+                        timeMS_created = tempTimeMS_created
+                        #pyotherside.send('debugPythonLogs', "EXIF dict empty")
+                except: # in case of error (e.g. non-ascii characters OR "0000:00:00 00:00:00" as value) -> use the date from previous info
                     timestampSource = tempTimestampSource
                     timeMS_created = tempTimeMS_created
-                    #pyotherside.send('debugPythonLogs', "EXIF dict empty")
-            except: # in case of error (e.g. non-ascii characters OR "0000:00:00 00:00:00" as value) -> use the date from previous info
-                timestampSource = tempTimestampSource
-                timeMS_created = tempTimeMS_created
-                #pyotherside.send('debugPythonLogs', "EXIF error parsing: " + filePath  )
+                    #pyotherside.send('debugPythonLogs', "EXIF error parsing: " + filePath  )
 
-        # get IPTC album keywords
-        if filePath.endswith( iptcEnabledExtensions ):
-            iptc_keywords = []
-            foundAlbumTag = ""
-            try:
-                iptc_info = iptcinfo3.IPTCInfo(filePath)
-                iptc_keywords = iptc_info['keywords']
-                if len(iptc_keywords) > 0:
-                    for keyword in iptc_keywords:
-                        if isinstance(keyword, bytes):
-                            keyword = keyword.decode()
-                        foundAlbumTag += str(keyword) + ", "
-                    foundAlbumTag = foundAlbumTag[:-2]
-                    #pyotherside.send('debugPythonLogs', foundAlbumTag )
-                else:
+            # get IPTC album keywords
+            if filePath.endswith( iptcEnabledExtensions ):
+                iptc_keywords = []
+                foundAlbumTag = ""
+                try:
+                    iptc_info = iptcinfo3.IPTCInfo(filePath)
+                    iptc_keywords = iptc_info['keywords']
+                    if len(iptc_keywords) > 0:
+                        for keyword in iptc_keywords:
+                            if isinstance(keyword, bytes):
+                                keyword = keyword.decode()
+                            foundAlbumTag += str(keyword) + ", "
+                        foundAlbumTag = foundAlbumTag[:-2]
+                        #pyotherside.send('debugPythonLogs', foundAlbumTag )
+                    else:
+                        foundAlbumTag = "|||"
+                except:
                     foundAlbumTag = "|||"
-            except:
-                foundAlbumTag = "|||"
 
     # get creation date
     timeUTC_created = datetime.datetime.utcfromtimestamp(timeMS_created)

@@ -33,6 +33,7 @@ Page {
 
     // image list generation and checks against db
     property int settingUseExif : 0 //parseInt(storageItem.getSetting("infoTimeUseExifAlbum", 0))
+    property bool refreshingExifCache : false // python tells us when the exif cache gets rebuilt from scratch
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
 
@@ -227,6 +228,9 @@ Page {
             setHandler('scanProgress', function(someCounter, imagesTotalAmount) {
                 currentlyScannedImage = someCounter
                 maxScannedImages = imagesTotalAmount
+            });
+            setHandler('refreshingExifCache', function() {
+                refreshingExifCache = true
             });
             setHandler('returnSortedImageList2Model', function(fileList) {
                 //idListModelImages.clear()
@@ -466,6 +470,7 @@ Page {
         // file operations
         function scanForImages() {
             finishedLoading = false
+            refreshingExifCache = false
             runSlideshowTimer = false
             // the following part could also be included on the receiving end but saves some time if done here
             idListModelImages.clear()
@@ -625,7 +630,7 @@ Page {
                 leftPadding: rightPadding
                 color: finishedLoading ? Theme.highlightColor : Theme.secondaryHighlightColor
                 elide: Text.ElideRight
-                text: (currentlyScannedImage + "/" + maxScannedImages)
+                text: (refreshingExifCache ? qsTr("Refreshing EXIF cache") + " " : "") + (currentlyScannedImage + "/" + maxScannedImages)
             }
 
             section.property: ("monthYear")
@@ -838,7 +843,7 @@ Page {
                 leftPadding: rightPadding
                 color: finishedLoading ? Theme.highlightColor : Theme.secondaryHighlightColor
                 elide: Text.ElideRight
-                text: finishedLoading ? (idListModelImages.count) : (currentlyScannedImage + "/" + maxScannedImages)
+                text: finishedLoading ? (idListModelImages.count) : ((refreshingExifCache ? qsTr("Refreshing EXIF cache") + " " : "") + currentlyScannedImage + "/" + maxScannedImages)
             }
             footer: Item {
                 width: parent.width
@@ -1053,7 +1058,7 @@ Page {
                 rightPadding: Theme.paddingLarge // * 2
                 leftPadding: rightPadding
                 color: finishedLoading ? Theme.highlightColor : Theme.secondaryHighlightColor
-                text: finishedLoading ? (idListModelImages.count + " | " + idListModelFolders.count) : (currentlyScannedImage + "/" + maxScannedImages)
+                text: finishedLoading ? (idListModelImages.count + " | " + idListModelFolders.count) : ((refreshingExifCache ? qsTr("Refreshing EXIF cache") + " " : "") + currentlyScannedImage + "/" + maxScannedImages)
             }
             footer: Item {
                 width: parent.width

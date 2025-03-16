@@ -16,10 +16,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Alum sid plurum libitum ad cetera et amet sit dolor ipsum lorem.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Metadata</source>
         <translation type="unfinished"></translation>
     </message>
@@ -151,6 +147,10 @@
 </context>
 <context>
     <name>FirstPage</name>
+    <message>
+        <source>Refreshing EXIF cache</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
         <source>May</source>
         <translation type="unfinished"></translation>
