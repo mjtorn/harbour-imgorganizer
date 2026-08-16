@@ -35,6 +35,14 @@
 <context>
     <name>AlbumPage</name>
     <message>
+        <source>Filter by album</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show all</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Info</source>
         <translation type="unfinished"></translation>
     </message>

@@ -35,6 +35,7 @@ Page {
     property int settingUseExif : 0 //parseInt(storageItem.getSetting("infoTimeUseExifAlbum", 0))
     property bool refreshingExifCache : false // python tells us when the exif cache gets rebuilt from scratch
     property string deleteRequestSourcePage : "" // which page a delete came from, list cleanup happens once python reports back
+    property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
 
@@ -1598,6 +1599,7 @@ Page {
 
     function getImagesInFolder( folderName ) {
         currentFolder = folderName
+        currentFolderAlbumFilter = "" // opening a folder always starts unfiltered
         idListModelImagesFolder.clear()
 
         for (var i = 0; i < idListModelImages.count; i++) {
@@ -1618,6 +1620,22 @@ Page {
                     "isFavourite" : idListModelImages.get(i).isFavourite,
                     "listModelImages_baseIndex" : i
                 })
+            }
+        }
+    }
+
+    function setFolderAlbumFilter( albumName ) {
+        // re-fill the folder list first, an earlier filter may have hidden images of the newly chosen album
+        getImagesInFolder( currentFolder )
+        currentFolderAlbumFilter = albumName
+        applyFolderAlbumFilter()
+    }
+
+    function applyFolderAlbumFilter() {
+        if (currentFolderAlbumFilter === "") { return }
+        for (var i = idListModelImagesFolder.count -1; i >= 0; --i) {
+            if (idListModelImagesFolder.get(i).album !== currentFolderAlbumFilter) {
+                idListModelImagesFolder.remove(i)
             }
         }
     }

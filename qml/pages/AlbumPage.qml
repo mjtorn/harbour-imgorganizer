@@ -59,6 +59,10 @@ Page {
                     }
                     else { // currentModel === "folders"
                         returnText = currentFolder
+                        if (currentFolderAlbumFilter !== "") {
+                            var filterText = (currentFolderAlbumFilter[0] === ".") ? currentFolderAlbumFilter.substring(1) : currentFolderAlbumFilter
+                            returnText = returnText + "<br>" + "<i>" + filterText + "</i>"
+                        }
                     }
                     // get rid of first "." character
                     return returnText
@@ -88,6 +92,18 @@ Page {
                     }
                     else {
                         multiSelectActive = true
+                    }
+                }
+            }
+            MenuItem {
+                visible: (currentModel === "folders")
+                text: (currentFolderAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
+                onClicked: {
+                    if (currentFolderAlbumFilter !== "") {
+                        getImagesInFolder( currentFolder ) // re-fills the full folder and resets the filter
+                    }
+                    else {
+                        bannerToAlbumFromAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromFolder", "triggeredOnAlbumPage", true )
                     }
                 }
             }

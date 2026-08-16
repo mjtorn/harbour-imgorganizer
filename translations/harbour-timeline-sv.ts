@@ -35,6 +35,14 @@
 <context>
     <name>AlbumPage</name>
     <message>
+        <source>Filter by album</source>
+        <translation>Filtrera efter album</translation>
+    </message>
+    <message>
+        <source>Show all</source>
+        <translation>Visa alla</translation>
+    </message>
+    <message>
         <source>Info</source>
         <translation>Info</translation>
     </message>

@@ -35,6 +35,14 @@
 <context>
     <name>AlbumPage</name>
     <message>
+        <source>Filter by album</source>
+        <translation>Nach Album filtern</translation>
+    </message>
+    <message>
+        <source>Show all</source>
+        <translation>Alle anzeigen</translation>
+    </message>
+    <message>
         <source>Unselect</source>
         <translation>Abwählen</translation>
     </message>

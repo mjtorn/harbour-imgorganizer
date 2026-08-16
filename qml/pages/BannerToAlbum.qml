@@ -17,6 +17,7 @@ MouseArea {
     property var targetAlbumPathList : []
     property string triggeredFrom : ""
     property string triggeredOn: ""
+    property bool filterMode : false // pick an album as folder filter instead of assigning it, no album creation
 
     Behavior on opacity {
         FadeAnimator {}
@@ -50,6 +51,8 @@ MouseArea {
                         height: Theme.paddingLarge
                     }
                     IconButton {
+                        visible: (filterMode === false)
+                        enabled: visible
                         width: parent.width
                         //height: Theme.iconSizeSmall
                         icon.source: (idTextFieldNewAlbum.visible === false) ? ("image://theme/icon-m-add?") : ("image://theme/icon-m-remove?")
@@ -86,6 +89,9 @@ MouseArea {
                                 for (var j = 0; j < targetAlbumPathList.length; j++) {
                                     setModelImagesAndDB( j, targetAlbumPathList[j], text )
                                 }
+                                if (triggeredFrom === "fromFolder") {
+                                    applyFolderAlbumFilter()
+                                }
                                 text = ""
                                 hide()
                             }
@@ -113,8 +119,17 @@ MouseArea {
                             contentWidth: parent.width - 2* contentX
                             contentHeight: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum ) ? Theme.itemSizeExtraSmall : 0
                             onClicked: {
-                                for (var j = 0; j < targetAlbumPathList.length; j++) {
-                                    setModelImagesAndDB( j, targetAlbumPathList[j], album_name )
+                                if (filterMode === true) {
+                                    setFolderAlbumFilter( album_name )
+                                }
+                                else {
+                                    for (var j = 0; j < targetAlbumPathList.length; j++) {
+                                        setModelImagesAndDB( j, targetAlbumPathList[j], album_name )
+                                    }
+                                    // images set to another album must leave the currently filtered folder view
+                                    if (triggeredFrom === "fromFolder") {
+                                        applyFolderAlbumFilter()
+                                    }
                                 }
                                 hide()
                             }
@@ -137,9 +152,10 @@ MouseArea {
     }
 
 
-    function notify( color, upperMargin, chosenFilesArray, detailTrigger, triggerPage ) {
+    function notify( color, upperMargin, chosenFilesArray, detailTrigger, triggerPage, filterOnly ) {
         triggeredFrom = detailTrigger
         triggeredOn = triggerPage
+        filterMode = (filterOnly === true)
         if (color && (typeof(color) != "undefined")) { idBackgroundRect.color = color }
         else { idBackgroundRect.color = Theme.rgba(Theme.highlightDimmerColor, 1) }
         if (upperMargin && (typeof(upperMargin) != "undefined")) { idBackgroundRect.anchors.topMargin = upperMargin }
