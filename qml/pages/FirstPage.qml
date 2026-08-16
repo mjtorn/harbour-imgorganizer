@@ -1330,22 +1330,22 @@ Page {
     function countDistinctAlbums() {
         // clear listmodel and re-create it with new values
         idListModelAlbums.clear()
-        var allAlbumsArray = []
-        var prev_album_found = ""
+        // collect all albums and their files in a single pass instead of re-scanning the image model per album
+        var albumFilesMap = ({})
         for (var i = 0; i < idListModelImages.count; i++) {
-            var album_value = idListModelImages.get(i).album
-            if (album_value !== prev_album_found) {
-                allAlbumsArray.push(album_value)
-                prev_album_found = album_value
+            var imageItem = idListModelImages.get(i)
+            if (albumFilesMap[imageItem.album] === undefined) {
+                albumFilesMap[imageItem.album] = []
             }
+            albumFilesMap[imageItem.album].push( imageItem.filePath )
         }
+        distinctAlbums = Object.keys(albumFilesMap)
         if (idListModelSearch.count > 0) {
-            allAlbumsArray.push( standardSearchAlbum ) // visible when there are search results
+            distinctAlbums.push( standardSearchAlbum ) // visible when there are search results
         }
         if (idListModelFavourites.count > 0) {
-            allAlbumsArray.push( standardFavouritesAlbum ) // visible when there are favorites
+            distinctAlbums.push( standardFavouritesAlbum ) // visible when there are favorites
         }
-        distinctAlbums = (allAlbumsArray.filter(function(v,i) { return i===allAlbumsArray.lastIndexOf(v); }))
         distinctAlbums = distinctAlbums.sort()
 
         // count items and assign a random image
@@ -1372,21 +1372,11 @@ Page {
             }
             // other albums
             else {
-                var tempFileArray = []
-                for (var c = 0; c < idListModelImages.count; c++) {
-                    if (idListModelImages.get(c).album === distinctAlbums[j]) {
-                        counter += 1
-                        if ((counter > 0 && infoActivateCoverImages)) {
-                            tempFileArray.push(idListModelImages.get(c).filePath)
-                        }
-                    }
-                }
+                counter = albumFilesMap[distinctAlbums[j]].length
                 if (infoActivateCoverImages) {
-                    randomIndex = randomIntFromInterval(0, tempFileArray.length-1)
-                    randomFilePath = tempFileArray[randomIndex]
-                    tempFileArray = []
+                    randomIndex = randomIntFromInterval(0, counter-1)
+                    randomFilePath = albumFilesMap[distinctAlbums[j]][randomIndex]
                 }
-
             }
 
             // now add to album listmodel
@@ -1396,7 +1386,6 @@ Page {
                                        "random_image" : randomFilePath,
                                        "previous_image" : (previousRandomImagesAlbumArray[j] !== undefined) ? previousRandomImagesAlbumArray[j] : ""
                                      })
-            tempFileArray = []
             // store that info in an array as well which we can use next time
             previousRandomImagesAlbumArray[j] = randomFilePath
         }
@@ -1404,38 +1393,30 @@ Page {
     }
 
     function countDistinctFolders() {
-        var uniqueFoldersArray = []
-        var uniqueFoldersCounterArray = []
         idListModelFolders.clear() // creates trouble, sometimes scrolls list back up to zero on randomizing ... how to avoid that???
 
+        // collect all folders and their files in a single pass, growing the listmodel strings per image is far too slow
+        var uniqueFoldersArray = []
+        var folderFilesMap = ({})
         for (var i = 0; i < idListModelImages.count; i++) {
-            var tempFolderPath = idListModelImages.get(i).folderPath
-            var tempFilePath = idListModelImages.get(i).filePath
-            var tempUniqueFolderArrayIndex = uniqueFoldersArray.indexOf( tempFolderPath )
-
-            if (tempUniqueFolderArrayIndex > -1) { // already in listmodel
-                // raise the file counter +1
-                uniqueFoldersCounterArray[tempUniqueFolderArrayIndex] = uniqueFoldersCounterArray[tempUniqueFolderArrayIndex] + 1
-                idListModelFolders.setProperty( tempUniqueFolderArrayIndex, "folder_count", uniqueFoldersCounterArray[tempUniqueFolderArrayIndex])
-                // update the list of available file paths
-                var prevListFilesInFolder = idListModelFolders.get(tempUniqueFolderArrayIndex).folder_files_all
-                idListModelFolders.setProperty( tempUniqueFolderArrayIndex, "folder_files_all", prevListFilesInFolder + "|||" + tempFilePath)
-                prevListFilesInFolder = ""
+            var imageItem = idListModelImages.get(i)
+            if (folderFilesMap[imageItem.folderPath] === undefined) {
+                uniqueFoldersArray.push( imageItem.folderPath )
+                folderFilesMap[imageItem.folderPath] = []
             }
-            else { // not yet in listmodel
-                uniqueFoldersArray.push( tempFolderPath )
-                uniqueFoldersCounterArray.push( 1 )
-                idListModelFolders.append({ "folder_name" : tempFolderPath,
-                                            "folder_count" : 1,
-                                            "folder_files_all" : tempFilePath,
-                                            "random_image" : "",
-                                          })
-            }
+            folderFilesMap[imageItem.folderPath].push( imageItem.filePath )
+        }
+        for (var j = 0; j < uniqueFoldersArray.length; j++) {
+            idListModelFolders.append({ "folder_name" : uniqueFoldersArray[j],
+                                        "folder_count" : folderFilesMap[uniqueFoldersArray[j]].length,
+                                        "folder_files_all" : (folderFilesMap[uniqueFoldersArray[j]]).join("|||"),
+                                        "random_image" : "",
+                                      })
         }
         // now sort listmodel alphabetically and cleanup
         idListModelFolders.quick_sort()
         uniqueFoldersArray = []
-        uniqueFoldersCounterArray = []
+        folderFilesMap = ({})
     }
 
     function randomizeDistinctFoldersArray() {
