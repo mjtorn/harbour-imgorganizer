@@ -566,12 +566,46 @@ def getEXIFdata ( filePath, creationDateMS, monthYear, day, folderPath, fileName
 
 
 
-def deleteFilesFunction ( deletePathArray, imagesWorkload2Rescan ):
+def removeFromExifCache ( removedPathList ):
+    # keep the cache consistent right away instead of waiting for the next scan to prune it
+    try:
+        with open(exifCachePath(), 'rb') as cacheFile:
+            cacheVersion, cachedExifDict = pickle.load(cacheFile)
+        if cacheVersion != exifCacheVersion:
+            return
+        removedAny = False
+        for removedPath in removedPathList:
+            if removedPath in cachedExifDict:
+                del cachedExifDict[removedPath]
+                removedAny = True
+        if removedAny:
+            with open(exifCachePath() + ".tmp", 'wb') as cacheFile:
+                pickle.dump( (exifCacheVersion, cachedExifDict), cacheFile )
+            os.replace(exifCachePath() + ".tmp", exifCachePath())
+    except: # missing or unreadable cache -> nothing to clean up here
+        pass
+
+
+def deleteFilesFunction ( deletePathArray ):
+    deletedPathList = []
+    failedPathList = []
+    seenPathSet = set()
     for deletePath in deletePathArray:
-        os.remove ( deletePath )
-    # trigger rescan from QML to re-fill all lists
-    if (len(deletePathArray) >= imagesWorkload2Rescan):
-        pyotherside.send('filesDeleted', )
+        # guard against empty strings and duplicate paths, a failing os.remove used to abort the whole loop silently
+        if deletePath == "" or deletePath in seenPathSet:
+            continue
+        seenPathSet.add( deletePath )
+        try:
+            os.remove ( deletePath )
+            deletedPathList.append( deletePath )
+        except:
+            if os.path.exists( deletePath ): # still on disk -> deletion really failed
+                failedPathList.append( deletePath )
+            else: # was already gone -> report as deleted so QML cleans its lists anyway
+                deletedPathList.append( deletePath )
+    removeFromExifCache( deletedPathList )
+    # QML removes the returned paths from all lists and the DB, or triggers a full rescan for big batches
+    pyotherside.send('returnDeletedFiles', deletedPathList, failedPathList)
 
 
 def checkFileExistence( inWhichTable, filePath ):

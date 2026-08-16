@@ -34,6 +34,7 @@ Page {
     // image list generation and checks against db
     property int settingUseExif : 0 //parseInt(storageItem.getSetting("infoTimeUseExifAlbum", 0))
     property bool refreshingExifCache : false // python tells us when the exif cache gets rebuilt from scratch
+    property string deleteRequestSourcePage : "" // which page a delete came from, list cleanup happens once python reports back
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
 
@@ -383,10 +384,11 @@ Page {
                     finishedLoading = true
                 }
             });
-            setHandler('filesDeleted', function() {
-                //console.log("more than " + imagesWorkload2Rescan + " images got deleted, triggering rescan...")
-                clearAllLists()
-                py.scanForImages()
+            setHandler('returnDeletedFiles', function(deletedPathArray, failedPathArray) {
+                if (failedPathArray.length > 0) {
+                    console.log("could not delete " + failedPathArray.length + " file(s): " + failedPathArray)
+                }
+                removeDeletedFilesFromLists(deletedPathArray)
             });
             setHandler('updateImage', function() {
                 reloadImage = true
@@ -497,8 +499,8 @@ Page {
             //console.log(thisDateMS)
             call("timelinex.findClosestDate", [datesItems, thisDateMS])
         }
-        function deleteFilesFunction( deletePathArray, imagesWorkload2Rescan ) {
-            call("timelinex.deleteFilesFunction", [ deletePathArray, imagesWorkload2Rescan ])
+        function deleteFilesFunction( deletePathArray ) {
+            call("timelinex.deleteFilesFunction", [ deletePathArray ])
         }
         function renameOriginalFunction( currentPath ) {
             //var currentPath = "/" + origImageFilePath.replace(/^(file:\/{3})|(qrc:\/{2})|(http:\/{2})/,"")
@@ -1621,92 +1623,94 @@ Page {
     }
 
     function deleteThisImage ( filePathArray, fromPage ) {
+        // python deletes the files and reports back what is really gone, all list and DB cleanup happens in removeDeletedFilesFromLists
+        deleteRequestSourcePage = fromPage
+        py.deleteFilesFunction( filePathArray )
+    }
 
-        // buxfix: if there are too many files the UI gets blocked by the below, so use only if there are few imges to delete at once
-        if (filePathArray.length < imagesWorkload2Rescan) {
+    function removeDeletedFilesFromLists ( deletedPathArray ) {
+        var fromPage = deleteRequestSourcePage
+        deleteRequestSourcePage = ""
 
-            // cycle through all files individually
-            for (var j = 0; j < filePathArray.length; j++) {
-                var filePath = filePathArray[j]
+        // remove from DB, checks automatically if available or not
+        for (var j = 0; j < deletedPathArray.length; j++) {
+            storageItem.removeAlbum(deletedPathArray[j])
+            storageItem.removeKeywords(deletedPathArray[j])
+        }
 
-                // remove from DB, checks automatically if available or not
-                storageItem.removeAlbum(filePath)
+        // bugfix: if there are too many images 2 delete, the list counting takes too long and blocks UI, we therefore just call a complete rescan to fill up lists
+        if (deletedPathArray.length >= imagesWorkload2Rescan) {
+            clearAllLists()
+            py.scanForImages()
+            return
+        }
 
-                // remove from main image list
-                for (var i = idListModelImages.count -1; i >= 0; --i) {
-                    if (idListModelImages.get(i).filePath === filePath) {
-                        idListModelImages.remove(i)
-                    }
-                }
+        var deletedPathsMap = ({})
+        for (j = 0; j < deletedPathArray.length; j++) {
+            deletedPathsMap[deletedPathArray[j]] = true
+        }
 
-                // remove from current album list
-                for (var k = idListModelImagesAlbum.count -1; k >= 0; --k) {
-                    if (idListModelImagesAlbum.get(k).filePath === filePath) {
-                        idListModelImagesAlbum.remove(k)
-                    }
-                }
-
-                // remove from current folder list
-                for ( var o = idListModelImagesFolder.count -1; o >= 0; --o) {
-                    if (idListModelImagesFolder.get(o).filePath === filePath) {
-                        idListModelImagesFolder.remove(o)
-                    }
-                }
-
-                // possibly remove from search results list as well
-                for ( var l = idListModelSearch.count -1; l >= 0; --l) {
-                    if (idListModelSearch.get(l).filePath === filePath) {
-                        idListModelSearch.remove(l)
-                    }
-                }
-
-                // possibly remove from favourites list as well and from its DB entry
-                for ( l = idListModelFavourites.count -1; l >= 0; --l) {
-                    if (idListModelFavourites.get(l).filePath === filePath) {
-                        idListModelFavourites.remove(l)
-                        storageItem.removeKeywords(filePath)
-                    }
-                }
-            }
-            // then remove physical file
-            py.deleteFilesFunction( filePathArray, imagesWorkload2Rescan)
-
-            // re-count items still left, search results should be kept
-            countDistinctAlbums()
-
-            // remove album and close album-page, if it was last image available
-            if (idListModelImagesAlbum.count < 1) {
-                for ( var m = idListModelAlbums.count -1; m >= 0; --m) {
-                    if ((idListModelAlbums.get(m).album_name === currentAlbum) && (currentAlbum !== standardFavouritesAlbum) && (currentAlbum !== standardAlbum)) {
-                        idListModelAlbums.remove(m)
-                    }
-                }
-                if (fromPage === "albumPage") { pageStack.pop() }
-            }
-
-            // re-count items still left in folders
-            countDistinctFolders()
-            randomizeDistinctFoldersArray()
-
-            // remove folder from list, if it was last image available
-            if (idListModelImagesFolder.count < 1) {
-                for ( var n = idListModelFolders.count -1; n >= 0; --n) {
-                    if (idListModelFolders.get(n).folder_name === currentFolder) {
-                        idListModelFolders.remove(n)
-                    }
-                }
-                if (fromPage === "folderPage") { pageStack.pop() }
+        // remove from main image list
+        for (var i = idListModelImages.count -1; i >= 0; --i) {
+            if (deletedPathsMap[idListModelImages.get(i).filePath] === true) {
+                idListModelImages.remove(i)
             }
         }
-        // bugfix: if there are too many images 2 delete, the list counting takes too long and blocks UI, we therefore just call a complete rescan from Python side to fill up lists
-        else {
-            // remove images from DB
-            for (j = 0; j < filePathArray.length; j++) {
-                storageItem.removeAlbum(filePathArray[j])
+
+        // remove from current album list
+        for (var k = idListModelImagesAlbum.count -1; k >= 0; --k) {
+            if (deletedPathsMap[idListModelImagesAlbum.get(k).filePath] === true) {
+                idListModelImagesAlbum.remove(k)
             }
-            // batch delete images in Py
-            py.deleteFilesFunction( filePathArray, imagesWorkload2Rescan)
         }
+
+        // remove from current folder list
+        for ( var o = idListModelImagesFolder.count -1; o >= 0; --o) {
+            if (deletedPathsMap[idListModelImagesFolder.get(o).filePath] === true) {
+                idListModelImagesFolder.remove(o)
+            }
+        }
+
+        // possibly remove from search results list as well
+        for ( var l = idListModelSearch.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelSearch.get(l).filePath] === true) {
+                idListModelSearch.remove(l)
+            }
+        }
+
+        // possibly remove from favourites list as well
+        for ( l = idListModelFavourites.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelFavourites.get(l).filePath] === true) {
+                idListModelFavourites.remove(l)
+            }
+        }
+
+        // positions into idListModelImages shifted, re-map the stored indexes so eg. set-album keeps hitting the right image
+        var pathIndexMap = ({})
+        for (i = 0; i < idListModelImages.count; i++) {
+            pathIndexMap[idListModelImages.get(i).filePath] = i
+        }
+        for (l = 0; l < idListModelFavourites.count; l++) {
+            idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
+        }
+        for (k = 0; k < idListModelImagesAlbum.count; k++) {
+            idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+        }
+        for (o = 0; o < idListModelImagesFolder.count; o++) {
+            idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+        }
+
+        // re-count items still left, search results should be kept - empty albums and folders drop out of the rebuilt models automatically
+        countDistinctAlbums()
+        countDistinctFolders()
+        randomizeDistinctFoldersArray()
+
+        // close album- or folder-page, if it was the last image available there
+        if ((fromPage === "albumPage") && (idListModelImagesAlbum.count < 1)) { pageStack.pop() }
+        if ((fromPage === "folderPage") && (idListModelImagesFolder.count < 1)) { pageStack.pop() }
+
+        // the app cover may have shown one of the deleted images
+        randomCoverImage()
     }
 
     function updateAllLists_isFavourite( fromPage, action, filePathArray ) {
@@ -1781,7 +1785,7 @@ Page {
                 }
             }
             // case search album
-            if (currentNameOrFolder === standardSearchAlbum) {
+            else if (currentNameOrFolder === standardSearchAlbum) {
                 for (i = 0; i < idListModelSearch.count; i++) {
                     imagePathsList = imagePathsList + (idListModelSearch.get(i).filePath).toString() + "|||"
                 }
