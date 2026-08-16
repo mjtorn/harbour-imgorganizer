@@ -236,20 +236,20 @@ Page {
                 //idListModelImages.clear()
                 //idListModelImagesAlbum.clear()
 
+                // build lookup maps once instead of scanning the db arrays for every single image
+                var monthNamesArray = [ qsTr("January"), qsTr("February"), qsTr("March"), qsTr("April"), qsTr("May"), qsTr("June"), qsTr("July"), qsTr("August"), qsTr("September"), qsTr("October"), qsTr("November"), qsTr("December") ]
+                var favouritesMap = ({})
+                for (var j = 0; j < dbFavouritesArray.length; j++) {
+                    favouritesMap[dbFavouritesArray[j]] = true
+                }
+                var albumsMap = ({})
+                for (j = 0; j < dbPathAlbumsArray.length; j++) {
+                    albumsMap[dbPathAlbumsArray[j][0]] = dbPathAlbumsArray[j][1]
+                }
+
                 // now go through file list and add all info
                 for(var i = 0; i < fileList.length; i++) {
-                    if (fileList[i][3] === 1) { var month2text = qsTr("January") }
-                    else if (fileList[i][3] === 2) { month2text = qsTr("February") }
-                    else if (fileList[i][3] === 3) { month2text = qsTr("March") }
-                    else if (fileList[i][3] === 4) { month2text = qsTr("April") }
-                    else if (fileList[i][3] === 5) { month2text = qsTr("May") }
-                    else if (fileList[i][3] === 6) { month2text = qsTr("June") }
-                    else if (fileList[i][3] === 7) { month2text = qsTr("July") }
-                    else if (fileList[i][3] === 8) { month2text = qsTr("August") }
-                    else if (fileList[i][3] === 9) { month2text = qsTr("September") }
-                    else if (fileList[i][3] === 10) { month2text = qsTr("October") }
-                    else if (fileList[i][3] === 11) { month2text = qsTr("November") }
-                    else if (fileList[i][3] === 12) { month2text = qsTr("December") }
+                    var month2text = monthNamesArray[fileList[i][3]-1]
                     var newPathArray = fileList[i][1].split("/")
                     var folderPath = (newPathArray.slice(0, newPathArray.length-1)).join("/") + "/"
                     var fileName = newPathArray.slice(-1)[0]
@@ -257,20 +257,10 @@ Page {
                     var exifAlbum = fileList[i][6]
 
                     // check if image is a favourite in DB
-                    var isFavourite = "false"
-                    for (var j = 0; j < dbFavouritesArray.length; j++) {
-                        if (dbFavouritesArray[j] === fileList[i][1]) {
-                            isFavourite = "true"
-                        }
-                    }
+                    var isFavourite = (favouritesMap[fileList[i][1]] === true) ? "true" : "false"
 
                     // check if image has album assigned in DB
-                    var inAlbum = standardAlbum
-                    for (j = 0; j < dbPathAlbumsArray.length; j++) {
-                        if (dbPathAlbumsArray[j][0] === fileList[i][1]) {
-                            inAlbum = dbPathAlbumsArray[j][1]
-                        }
-                    }
+                    var inAlbum = (albumsMap[fileList[i][1]] !== undefined) ? albumsMap[fileList[i][1]] : standardAlbum
 
                     // overwrite this value in case album taken from EXIF
                     if ( (settingUseExif !== 0) && (exifAlbum !== "|||") ) {
