@@ -619,6 +619,14 @@ Page {
                 enabled: finishedLoading === true
 
                 MenuItem {
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, picks up images that arrived outside the app and re-counts albums and folders
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
+                MenuItem {
                     text: qsTr("Jump to Date")
                     onClicked: {
                         var dialog = pageStack.push(datePickerComponent, { })
@@ -1106,6 +1114,14 @@ Page {
                 quickSelect: true
                 enabled: finishedLoading === true
 
+                MenuItem {
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, picks up images that arrived outside the app and re-counts albums and folders
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
                 MenuItem {
                     enabled: fileBrowserInstalled
                     text: (fileBrowserInstalled) ? qsTr("File Browser") : qsTr("File Browser not installed")

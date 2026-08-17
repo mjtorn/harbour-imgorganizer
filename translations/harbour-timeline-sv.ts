@@ -176,6 +176,10 @@
         <translation>Hoppa till datum</translation>
     </message>
     <message>
+        <source>Refresh</source>
+        <translation>Uppdatera</translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation>Visa nyaste först</translation>
     </message>

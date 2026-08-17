@@ -232,6 +232,10 @@
         <translation>Zum Datum springen</translation>
     </message>
     <message>
+        <source>Refresh</source>
+        <translation>Aktualisieren</translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation>Neueste zuerst anzeigen</translation>
     </message>
