@@ -597,13 +597,24 @@ Page {
         id: idSilicaFlickableFirstPage
         anchors.fill: parent
         anchors.bottomMargin: idFooterRow.height
+        // horizontal drag room for side-swiping between the views, vertical scrolling stays with the views themselves
+        flickableDirection: Flickable.HorizontalFlick
+        contentWidth: width * 3
+        contentHeight: height
+        onWidthChanged: contentX = width // also re-centers on orientation changes
+        onMovementEnded: {
+            if (contentX > width + width / 4) { switchViewBySwipe(1) }
+            else if (contentX < width - width / 4) { switchViewBySwipe(-1) }
+            contentX = width
+        }
 
         SilicaListView {
             id: idListViewTimeline
             visible: currentView === "timeline"
             enabled: visible
-            width: parent.width
-            height: parent.height
+            x: idSilicaFlickableFirstPage.width // the middle slot of the horizontal drag room is the resting position
+            width: idSilicaFlickableFirstPage.width
+            height: idSilicaFlickableFirstPage.height
             clip: true
             spacing: Theme.paddingSmall
             quickScroll: false
@@ -883,8 +894,9 @@ Page {
             id: idGridViewAlbums
             visible: currentView === "album"
             enabled: visible
-            width: parent.width
-            height: parent.height
+            x: idSilicaFlickableFirstPage.width
+            width: idSilicaFlickableFirstPage.width
+            height: idSilicaFlickableFirstPage.height
             clip: true
             cellWidth: minimumTimelineListItemHeight
             cellHeight: cellWidth
@@ -1100,8 +1112,9 @@ Page {
             id: idListViewFolders
             visible: currentView === "folder"
             enabled: visible
-            width: parent.width
-            height: parent.height
+            x: idSilicaFlickableFirstPage.width
+            width: idSilicaFlickableFirstPage.width
+            height: idSilicaFlickableFirstPage.height
             spacing: Theme.paddingSmall
             clip: true
             header: Label {
@@ -1753,6 +1766,15 @@ Page {
         for (var o = 0; o < idListModelImagesFolder.count; o++) {
             idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
         }
+    }
+
+    function switchViewBySwipe( direction ) {
+        if (finishedLoading === false) { return }
+        var viewOrder = ["timeline", "album", "folder"]
+        var viewIndex = viewOrder.indexOf(currentView) + direction
+        if (viewIndex < 0 || viewIndex >= viewOrder.length) { return } // no wrap around, settings only opens by tapping its button
+        currentView = viewOrder[viewIndex]
+        storageItem.setSetting("infoCurrentView", currentView)
     }
 
     function centeredTimelineIndex() {
