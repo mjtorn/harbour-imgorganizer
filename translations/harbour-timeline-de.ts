@@ -228,8 +228,8 @@
         <translation>Dezember</translation>
     </message>
     <message>
-        <source>Date</source>
-        <translation>Datum</translation>
+        <source>Jump to Date</source>
+        <translation>Zum Datum springen</translation>
     </message>
     <message>
         <source>Delete file?</source>

@@ -172,8 +172,8 @@
         <translation>Maj</translation>
     </message>
     <message>
-        <source>Date</source>
-        <translation>Datum</translation>
+        <source>Jump to Date</source>
+        <translation>Hoppa till datum</translation>
     </message>
     <message>
         <source>Info</source>

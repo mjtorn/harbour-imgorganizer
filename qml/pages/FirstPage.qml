@@ -603,7 +603,7 @@ Page {
                 enabled: finishedLoading === true
 
                 MenuItem {
-                    text: qsTr("Date")
+                    text: qsTr("Jump to Date")
                     onClicked: {
                         var dialog = pageStack.push(datePickerComponent, { })
                         dialog.accepted.connect( function () {

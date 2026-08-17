@@ -172,7 +172,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Date</source>
+        <source>Jump to Date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
