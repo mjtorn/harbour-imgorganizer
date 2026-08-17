@@ -464,6 +464,14 @@
 <context>
     <name>SettingsPage</name>
     <message>
+        <source>Metadata read-only: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>never write metadata into image files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>on</source>
         <translation type="unfinished"></translation>
     </message>

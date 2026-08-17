@@ -68,6 +68,8 @@ Dialog {
             storageItem.setSetting("infoTimeCreationModification", idComboboxModificationCreationDate.currentIndex)
             storageItem.setSetting("infoTimeHiddenFiles", idComboboxHiddenFiles.currentIndex)
             storageItem.setSetting("infoTimeUseExifAlbum", idComboboxUseExifAlbum.currentIndex)
+            storageItem.setSetting("infoStrictReadOnly", idComboboxStrictReadOnly.currentIndex)
+            infoStrictReadOnly = idComboboxStrictReadOnly.currentIndex
             storageItem.setSetting("infoActivateCoverImages", idComboboxActivateCoverImages.currentIndex)
 
             if (idComboBoxPreviewSize.currentIndex === 0) { var devideWidthBy = 4 }
@@ -286,6 +288,21 @@ Dialog {
                 onCurrentIndexChanged: {
                     if (thisItemManuallyEntered) {
                         settingsRequireRescanImages = true
+                    }
+                }
+            }
+            ComboBox {
+                id: idComboboxStrictReadOnly
+                width: parent.width
+                label: qsTr("Metadata read-only: ")
+                currentIndex: (parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) === 0) ? 0 : 1
+                description: qsTr("never write metadata into image files")
+                menu: ContextMenu {
+                    MenuItem {
+                        text: qsTr("off")
+                    }
+                    MenuItem {
+                        text: qsTr("on")
                     }
                 }
             }

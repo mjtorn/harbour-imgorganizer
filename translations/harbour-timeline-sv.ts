@@ -466,6 +466,14 @@
 <context>
     <name>SettingsPage</name>
     <message>
+        <source>Metadata read-only: </source>
+        <translation>Skrivskyddad metadata: </translation>
+    </message>
+    <message>
+        <source>never write metadata into image files</source>
+        <translation>skriver aldrig metadata till bildfiler</translation>
+    </message>
+    <message>
         <source>on</source>
         <translation>På</translation>
     </message>

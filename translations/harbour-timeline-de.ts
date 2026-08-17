@@ -466,6 +466,14 @@
 <context>
     <name>SettingsPage</name>
     <message>
+        <source>Metadata read-only: </source>
+        <translation>Metadaten schreibgeschützt: </translation>
+    </message>
+    <message>
+        <source>never write metadata into image files</source>
+        <translation>schreibt niemals Metadaten in Bilddateien</translation>
+    </message>
+    <message>
         <source>Remove</source>
         <translation>Löschen</translation>
     </message>
