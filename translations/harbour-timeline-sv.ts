@@ -180,6 +180,10 @@
         <translation>Sparad som ny kopia</translation>
     </message>
     <message>
+        <source>Refresh</source>
+        <translation>Uppdatera</translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation>Visa nyaste först</translation>
     </message>
