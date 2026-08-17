@@ -236,6 +236,10 @@
         <translation>Als neue Kopie gespeichert</translation>
     </message>
     <message>
+        <source>Refresh</source>
+        <translation>Aktualisieren</translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation>Neueste zuerst anzeigen</translation>
     </message>
