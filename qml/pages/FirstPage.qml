@@ -597,7 +597,7 @@ Page {
                 topPadding: (isPortrait) ? upperFreeHeight : 0
                 bottomPadding: (isPortrait) ? upperFreeHeight/3 : 0
                 labelModelTag: "monthYear"
-                visible: (parent.visibleArea.heightRatio < 1.0) && (idPulldownMenu.active === false) && (delegateMenuOpen === false)
+                visible: (parent.visibleArea.heightRatio < 1.0) && (idPulldownMenu.active === false) && (idPushUpMenu.active === false) && (delegateMenuOpen === false)
             }
             PullDownMenu {
                 id: idPulldownMenu
@@ -1254,9 +1254,49 @@ Page {
         }
     }
 
-    Rectangle {
-        id: idFooterRow
+    // the bar sits inside its own flickable, so the timeline pull-up menu can be dragged open from the bar at any scroll position
+    SilicaFlickable {
+        id: idBottomMenuFlickable
         y: appHeight - height
+        width: page.width
+        height: Theme.itemSizeMedium
+        contentHeight: height
+        flickableDirection: Flickable.VerticalFlick
+        clip: true
+
+        PushUpMenu {
+            id: idPushUpMenu
+            visible: (currentView === "timeline")
+            enabled: (finishedLoading === true) && visible
+            quickSelect: true
+            // the margin is functional: the lowermost item only stays highlighted for release-to-select while the drag sits
+            // between the content end and the final position, and the margin is exactly that headroom - with 0 every full
+            // pull lands on the final position where silica drops the highlight and locks the menu open until tapped.
+            // half the default (Theme.itemSizeSmall) keeps the release zone but halves the empty space below the last item
+            bottomMargin: Theme.itemSizeSmall / 2
+
+            MenuItem {
+                text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
+                onClicked: {
+                    if (timelineAlbumFilter !== "") {
+                        timelineAlbumFilter = ""
+                        idListModelTimelineFiltered.clear()
+                    }
+                    else {
+                        bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromTimeline", "triggeredOnFirstPage", true )
+                    }
+                }
+            }
+            MenuItem {
+                text: (timelineSortDirection === "0") ? qsTr("Show oldest first") : qsTr("Show newest first")
+                onClicked: {
+                    reverseTimelineOrder()
+                }
+            }
+        }
+
+        Rectangle {
+        id: idFooterRow
         width: page.width
         height: Theme.itemSizeMedium
         color: Theme.highlightDimmerColor
@@ -1341,6 +1381,7 @@ Page {
                     py.checkDB_fileExistance()
                 }
             }
+        }
         }
     }
 
