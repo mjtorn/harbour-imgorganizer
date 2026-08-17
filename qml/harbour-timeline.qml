@@ -18,6 +18,7 @@ ApplicationWindow {
     property var amountDetails : parseInt(storageItem.getSetting("infoTimeShowDetailsIndex", 0))
     property var infoWidthDevider : parseInt(storageItem.getSetting("infoWidthDevider", 3))
     property var infoActivateCoverImages : parseInt(storageItem.getSetting("infoActivateCoverImages", 0))
+    property var infoStrictReadOnly : parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) // 1 = never write into image files, editing disabled
     property var coverImageChangeInterval : parseInt(storageItem.getSetting("coverImageChangeInterval", 5000))
 
     // cover progress and image path

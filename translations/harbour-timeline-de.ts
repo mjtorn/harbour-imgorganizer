@@ -466,6 +466,14 @@
 <context>
     <name>SettingsPage</name>
     <message>
+        <source>Strict read-only: </source>
+        <translation>Strikt schreibgeschützt: </translation>
+    </message>
+    <message>
+        <source>never write into image files, editing disabled</source>
+        <translation>schreibt niemals in Bilddateien, Bearbeiten deaktiviert</translation>
+    </message>
+    <message>
         <source>Remove</source>
         <translation>Löschen</translation>
     </message>

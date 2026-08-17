@@ -464,6 +464,14 @@
 <context>
     <name>SettingsPage</name>
     <message>
+        <source>Strict read-only: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>never write into image files, editing disabled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>on</source>
         <translation type="unfinished"></translation>
     </message>

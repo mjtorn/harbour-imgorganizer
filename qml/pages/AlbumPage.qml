@@ -381,7 +381,7 @@ Page {
                         }
                     }
                     MenuItem {
-                        enabled: pillowAvailable && multiSelectActive
+                        enabled: pillowAvailable && multiSelectActive && (infoStrictReadOnly === 0)
                         visible: enabled
                         text: qsTr("Resize")
                         onClicked: {

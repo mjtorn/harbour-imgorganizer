@@ -30,6 +30,8 @@ MouseArea {
 
         IconButton {
             id: idButtonRotateLeft
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-rotate-left?"
@@ -52,6 +54,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonRotateRight
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-rotate-right?"
@@ -74,6 +78,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonCrop
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-crop?"
@@ -96,6 +102,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonFlip
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-flip?"
@@ -119,6 +127,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonMirror
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-flip?"
@@ -141,6 +151,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonColor
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-light-contrast?"
@@ -163,6 +175,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonResize
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-scale?"
@@ -216,6 +230,8 @@ MouseArea {
         }
         IconButton {
             id: idButtonPaint
+            visible: (infoStrictReadOnly === 0) // strict read-only mode never writes into image files
+            enabled: visible
             width: Theme.itemSizeLarge * 1.1
             height: width
             icon.source: "image://theme/icon-m-edit?"

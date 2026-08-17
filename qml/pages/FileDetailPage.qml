@@ -157,7 +157,7 @@ Page {
                     Label {
                         width: parent.width/2 - parent.spacing/2
                         font.pixelSize: Theme.fontSizeExtraSmall
-                        color: (tagEditable) ? Theme.highlightColor : Theme.secondaryColor
+                        color: (tagEditable && infoStrictReadOnly === 0) ? Theme.highlightColor : Theme.secondaryColor
                         horizontalAlignment: Text.AlignLeft
                         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                         text: tagValue
@@ -166,7 +166,7 @@ Page {
                             anchors.fill: parent
                             //onPressAndHold: {
                             onClicked: {
-                                if (tagEditable) {
+                                if (tagEditable && infoStrictReadOnly === 0) { // strict read-only mode never writes into image files
                                     bannerEditMeta.notify( Theme.highlightDimmerColor, filePath, ifd_zone, tag_nr, tagName, tagValue, index )
                                 }
                             }

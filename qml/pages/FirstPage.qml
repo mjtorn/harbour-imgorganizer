@@ -541,10 +541,12 @@ Page {
             call("timelinex.getAmountExtPartitions", [])
         }
         function insertMetadataKeywords ( tags, filePath ) {
+            if (infoStrictReadOnly !== 0) { return } // strict read-only mode never writes into image files
             var storeWhere = "in_IPTC"
             call("timelinex.insertMetadataKeywords", [ tags, filePath, storeWhere ])
         }
         function removeMetadataKeywords ( filePath ) {
+            if (infoStrictReadOnly !== 0) { return } // strict read-only mode never writes into image files
             var storeWhere = "in_IPTC"
             call("timelinex.removeMetadataKeywords", [ filePath, storeWhere ])
         }
@@ -555,6 +557,7 @@ Page {
             }
         }
         function editEXIFdata ( filePath, ifdZone, tagNr, tagName, tagValue ) {
+            if (infoStrictReadOnly !== 0) { return } // strict read-only mode never writes into image files
             //finishedLoading = false
             call("timelinex.editEXIFdata", [ filePath, ifdZone, tagNr, tagName, tagValue ])
         }
