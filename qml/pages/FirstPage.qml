@@ -37,6 +37,7 @@ Page {
     property string deleteRequestSourcePage : "" // which page a delete came from, list cleanup happens once python reports back
     property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
     property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
+    property string timelineSortDirection : "0" // mirrors infoTimeLineDirectionIndex, "0" = newest first
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
 
@@ -486,6 +487,7 @@ Page {
             }
             var sdCards2scanEXTERN = (storageItem.getSetting("sdCards2scanEXTERN", "1|||1|||1")).split("|||")
             var showDirection = storageItem.getSetting("infoTimeLineDirectionIndex", "0")
+            timelineSortDirection = showDirection
             var creationModificationDate = parseInt(storageItem.getSetting("infoTimeCreationModification", 0))
             var showHiddenFiles = parseInt(storageItem.getSetting("infoTimeHiddenFiles", 0))
             settingUseExif = parseInt(storageItem.getSetting("infoTimeUseExifAlbum", 0)) // 0 = no scanning, saves time // 1 = metadata // 2= filename parsing and metadata
@@ -609,6 +611,12 @@ Page {
                         dialog.accepted.connect( function () {
                             py.findClosestDate(dialog.date)
                         } )
+                    }
+                }
+                MenuItem {
+                    text: (timelineSortDirection === "0") ? qsTr("Show oldest first") : qsTr("Show newest first")
+                    onClicked: {
+                        reverseTimelineOrder()
                     }
                 }
                 MenuItem {
@@ -1647,6 +1655,100 @@ Page {
         }
     }
 
+    function remapBaseIndexes() {
+        // re-map the stored positions into idListModelImages after its rows shifted
+        var pathIndexMap = ({})
+        for (var i = 0; i < idListModelImages.count; i++) {
+            pathIndexMap[idListModelImages.get(i).filePath] = i
+        }
+        for (var l = 0; l < idListModelFavourites.count; l++) {
+            idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
+        }
+        for (l = 0; l < idListModelTimelineFiltered.count; l++) {
+            idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
+        }
+        for (var k = 0; k < idListModelImagesAlbum.count; k++) {
+            idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+        }
+        for (var o = 0; o < idListModelImagesFolder.count; o++) {
+            idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+        }
+    }
+
+    function reverseTimelineOrder() {
+        // remember what is centered on screen right now, the reversal must keep it there
+        var visibleModelCount = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered.count : idListModelImages.count
+        var centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 )
+        if (centeredIndex < 0) { // center may hit a section header or the row spacing, probe around it
+            centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 + minimumTimelineListItemHeight / 2 )
+        }
+        if (centeredIndex < 0) {
+            centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 - minimumTimelineListItemHeight / 2 )
+        }
+
+        // flip the stored direction so the next scan sorts the same way
+        timelineSortDirection = (timelineSortDirection === "0") ? "1" : "0"
+        storageItem.setSetting( "infoTimeLineDirectionIndex", timelineSortDirection )
+
+        // rebuild the lists in reverse, much faster than a full rescan
+        var reversedRowsArray = []
+        for (var i = idListModelImages.count -1; i >= 0; --i) {
+            var imageItem = idListModelImages.get(i)
+            reversedRowsArray.push({
+                "creationDateMS" : imageItem.creationDateMS,
+                "filePath" : imageItem.filePath,
+                "monthYear" : imageItem.monthYear,
+                "day" : imageItem.day,
+                "folderPath" : imageItem.folderPath,
+                "fileName" : imageItem.fileName,
+                "estimatedSize" : imageItem.estimatedSize,
+                "album" : imageItem.album,
+                "selected" : false,
+                "exifInfo" : imageItem.exifInfo,
+                "isSearchResult" : imageItem.isSearchResult,
+                "timestampSource" : imageItem.timestampSource,
+                "isFavourite" : imageItem.isFavourite
+            })
+        }
+        idListModelImages.clear()
+        idListModelImages.append(reversedRowsArray)
+
+        var reversedFavouritesArray = []
+        for (i = idListModelFavourites.count -1; i >= 0; --i) {
+            var favouriteItem = idListModelFavourites.get(i)
+            reversedFavouritesArray.push({
+                "creationDateMS" : favouriteItem.creationDateMS,
+                "filePath" : favouriteItem.filePath,
+                "monthYear" : favouriteItem.monthYear,
+                "day" : favouriteItem.day,
+                "folderPath" : favouriteItem.folderPath,
+                "fileName" : favouriteItem.fileName,
+                "estimatedSize" : favouriteItem.estimatedSize,
+                "album" : favouriteItem.album,
+                "selected" : false,
+                "exifInfo" : favouriteItem.exifInfo,
+                "isSearchResult" : favouriteItem.isSearchResult,
+                "timestampSource" : favouriteItem.timestampSource,
+                "isFavourite" : favouriteItem.isFavourite,
+                "listModelImages_baseIndex" : favouriteItem.listModelImages_baseIndex
+            })
+        }
+        idListModelFavourites.clear()
+        idListModelFavourites.append(reversedFavouritesArray)
+
+        remapBaseIndexes()
+
+        // rebuild an active filter in the new order
+        if (timelineAlbumFilter !== "") {
+            setTimelineAlbumFilter( timelineAlbumFilter )
+        }
+
+        // scroll back so the previously centered image stays centered, its position mirrors in a reversed list
+        if (centeredIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( visibleModelCount - 1 - centeredIndex, ListView.Center )
+        }
+    }
+
     function setTimelineAlbumFilter( albumName ) {
         timelineAlbumFilter = albumName
         idListModelTimelineFiltered.clear()
@@ -1769,22 +1871,7 @@ Page {
         }
 
         // positions into idListModelImages shifted, re-map the stored indexes so eg. set-album keeps hitting the right image
-        var pathIndexMap = ({})
-        for (i = 0; i < idListModelImages.count; i++) {
-            pathIndexMap[idListModelImages.get(i).filePath] = i
-        }
-        for (l = 0; l < idListModelFavourites.count; l++) {
-            idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
-        }
-        for (l = 0; l < idListModelTimelineFiltered.count; l++) {
-            idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
-        }
-        for (k = 0; k < idListModelImagesAlbum.count; k++) {
-            idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
-        }
-        for (o = 0; o < idListModelImagesFolder.count; o++) {
-            idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
-        }
+        remapBaseIndexes()
 
         // re-count items still left, search results should be kept - empty albums and folders drop out of the rebuilt models automatically
         countDistinctAlbums()

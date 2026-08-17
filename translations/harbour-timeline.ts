@@ -176,6 +176,14 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Show newest first</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show oldest first</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Info</source>
         <translation type="unfinished"></translation>
     </message>

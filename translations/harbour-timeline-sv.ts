@@ -176,6 +176,14 @@
         <translation>Hoppa till datum</translation>
     </message>
     <message>
+        <source>Show newest first</source>
+        <translation>Visa nyaste först</translation>
+    </message>
+    <message>
+        <source>Show oldest first</source>
+        <translation>Visa äldsta först</translation>
+    </message>
+    <message>
         <source>Info</source>
         <translation>Info</translation>
     </message>

@@ -232,6 +232,14 @@
         <translation>Zum Datum springen</translation>
     </message>
     <message>
+        <source>Show newest first</source>
+        <translation>Neueste zuerst anzeigen</translation>
+    </message>
+    <message>
+        <source>Show oldest first</source>
+        <translation>Älteste zuerst anzeigen</translation>
+    </message>
+    <message>
         <source>Delete file?</source>
         <translation>Datei löschen?</translation>
     </message>
