@@ -1806,10 +1806,32 @@ Page {
     }
 
     function setTimelineAlbumFilter( albumName ) {
+        // resolve the centered image to its position in the main list, the filter should land on the closest date instead of the top
+        var centeredIndex = centeredTimelineIndex()
+        var centeredBaseIndex = -1
+        if (centeredIndex >= 0) {
+            centeredBaseIndex = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered.get(centeredIndex).listModelImages_baseIndex : centeredIndex
+        }
+        var centeredDateMS = (centeredBaseIndex >= 0) ? idListModelImages.get(centeredBaseIndex).creationDateMS : 0
+        var nearestFilteredIndex = -1
+        var passedCenter = false
+
         timelineAlbumFilter = albumName
         idListModelTimelineFiltered.clear()
         for (var i = 0; i < idListModelImages.count; i++) {
             if (idListModelImages.get(i).album === albumName) {
+                // the lists share their chronological order, so the nearest list position is also the nearest date
+                if (centeredBaseIndex >= 0 && passedCenter === false) {
+                    if (i <= centeredBaseIndex) {
+                        nearestFilteredIndex = idListModelTimelineFiltered.count
+                    }
+                    else {
+                        passedCenter = true
+                        if (nearestFilteredIndex < 0 || Math.abs(idListModelImages.get(i).creationDateMS - centeredDateMS) < Math.abs(idListModelTimelineFiltered.get(nearestFilteredIndex).creationDateMS - centeredDateMS)) {
+                            nearestFilteredIndex = idListModelTimelineFiltered.count
+                        }
+                    }
+                }
                 idListModelTimelineFiltered.append({
                     "creationDateMS" : idListModelImages.get(i).creationDateMS,
                     "filePath" : idListModelImages.get(i).filePath,
@@ -1827,6 +1849,11 @@ Page {
                     "listModelImages_baseIndex" : i
                 })
             }
+        }
+
+        // scroll to the filtered image closest to the previously centered date, reverseTimelineOrder repositions again afterwards when it is the caller
+        if (nearestFilteredIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( nearestFilteredIndex, ListView.Center )
         }
     }
 
