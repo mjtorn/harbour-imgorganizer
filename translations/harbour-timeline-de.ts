@@ -160,6 +160,14 @@
         <translation>EXIF-Cache wird aktualisiert</translation>
     </message>
     <message>
+        <source>Filter by album</source>
+        <translation>Nach Album filtern</translation>
+    </message>
+    <message>
+        <source>Show all</source>
+        <translation>Alle anzeigen</translation>
+    </message>
+    <message>
         <source>UNSORTED</source>
         <translation>UNSORTIERT</translation>
     </message>

@@ -36,6 +36,7 @@ Page {
     property bool refreshingExifCache : false // python tells us when the exif cache gets rebuilt from scratch
     property string deleteRequestSourcePage : "" // which page a delete came from, list cleanup happens once python reports back
     property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
+    property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
 
@@ -187,6 +188,9 @@ Page {
     }
     ListModel {
         id: idListModelFavourites
+    }
+    ListModel {
+        id: idListModelTimelineFiltered
     }
     ShareAction {
         id: shareActionZip
@@ -465,6 +469,8 @@ Page {
             finishedLoading = false
             refreshingExifCache = false
             runSlideshowTimer = false
+            timelineAlbumFilter = "" // a rescan rebuilds the main list, stored filter indexes would go stale
+            idListModelTimelineFiltered.clear()
             // the following part could also be included on the receiving end but saves some time if done here
             idListModelImages.clear()
             idListModelImagesAlbum.clear()
@@ -605,6 +611,18 @@ Page {
                         } )
                     }
                 }
+                MenuItem {
+                    text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
+                    onClicked: {
+                        if (timelineAlbumFilter !== "") {
+                            timelineAlbumFilter = ""
+                            idListModelTimelineFiltered.clear()
+                        }
+                        else {
+                            bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromTimeline", "triggeredOnFirstPage", true )
+                        }
+                    }
+                }
 
             }
             BusyIndicator {
@@ -641,16 +659,17 @@ Page {
                 font.pixelSize: Theme.fontSizeMedium
             }
 
-            model: idListModelImages
+            model: (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
             delegate: ListItem {
                 width: parent.width
                 contentHeight: Math.max( idListRowTimelineDescription.height, minimumTimelineListItemHeight - Theme.paddingSmall )
                 contentWidth: (idListViewTimeline.visibleArea.heightRatio < 1.0) ? (parent.width - Theme.paddingLarge*2) : (parent.width)
                 onClicked:  {
                     var currentImageIndex = index
+                    var currentTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
                     var allCurrentModelImagePathsArray = []
-                    for (var j = 0; j < idListModelImages.count; j++) {
-                        allCurrentModelImagePathsArray.push(idListModelImages.get(j).filePath)
+                    for (var j = 0; j < currentTimelineModel.count; j++) {
+                        allCurrentModelImagePathsArray.push(currentTimelineModel.get(j).filePath)
                     }
                     pageStack.animatorPush(viewPage, {
                                                upperFreeHeight : upperFreeHeight,
@@ -670,8 +689,10 @@ Page {
                         MenuItem {
                             text: qsTr("Set Album")
                             onClicked: {
+                                // with an active filter the delegate index is not the index into idListModelImages
+                                var baseIndex = (timelineAlbumFilter !== "") ? model.listModelImages_baseIndex : index
                                 var chosenFilesArray = []
-                                chosenFilesArray.push([0,filePath,index])
+                                chosenFilesArray.push([0,filePath,baseIndex])
                                 bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, chosenFilesArray, "fromTimeline", "triggeredOnFirstPage" )
                             }
                         }
@@ -694,7 +715,7 @@ Page {
                                                          "isSearchResult" : false,
                                                          "timestampSource" : timestampSource,
                                                          "isFavourite" : "true",
-                                                         "listModelImages_baseIndex" : index
+                                                         "listModelImages_baseIndex" : (timelineAlbumFilter !== "") ? model.listModelImages_baseIndex : index
                                                      })
                                 }
                                 else { // remove from favourites
@@ -1328,6 +1349,8 @@ Page {
         idListModelImagesFolder.clear()
         idListModelSearch.clear()
         idListModelFavourites.clear()
+        idListModelTimelineFiltered.clear()
+        timelineAlbumFilter = ""
     }
 
     function countDistinctAlbums() {
@@ -1624,6 +1647,41 @@ Page {
         }
     }
 
+    function setTimelineAlbumFilter( albumName ) {
+        timelineAlbumFilter = albumName
+        idListModelTimelineFiltered.clear()
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).album === albumName) {
+                idListModelTimelineFiltered.append({
+                    "creationDateMS" : idListModelImages.get(i).creationDateMS,
+                    "filePath" : idListModelImages.get(i).filePath,
+                    "monthYear" : idListModelImages.get(i).monthYear,
+                    "day" : idListModelImages.get(i).day,
+                    "folderPath" : idListModelImages.get(i).folderPath,
+                    "fileName" : idListModelImages.get(i).fileName,
+                    "estimatedSize" : idListModelImages.get(i).estimatedSize,
+                    "album" : idListModelImages.get(i).album,
+                    "selected" : false,
+                    "exifInfo" :  idListModelImages.get(i).album,
+                    "isSearchResult" : false,
+                    "timestampSource" : idListModelImages.get(i).timestampSource,
+                    "isFavourite" : idListModelImages.get(i).isFavourite,
+                    "listModelImages_baseIndex" : i
+                })
+            }
+        }
+    }
+
+    function applyTimelineAlbumFilter() {
+        // drop images whose album no longer matches the active filter, checked against the main list which holds the fresh album values
+        if (timelineAlbumFilter === "") { return }
+        for (var i = idListModelTimelineFiltered.count -1; i >= 0; --i) {
+            if (idListModelImages.get(idListModelTimelineFiltered.get(i).listModelImages_baseIndex).album !== timelineAlbumFilter) {
+                idListModelTimelineFiltered.remove(i)
+            }
+        }
+    }
+
     function setFolderAlbumFilter( albumName ) {
         // re-fill the folder list first, an earlier filter may have hidden images of the newly chosen album
         getImagesInFolder( currentFolder )
@@ -1703,6 +1761,13 @@ Page {
             }
         }
 
+        // possibly remove from the filtered timeline as well
+        for ( l = idListModelTimelineFiltered.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelTimelineFiltered.get(l).filePath] === true) {
+                idListModelTimelineFiltered.remove(l)
+            }
+        }
+
         // positions into idListModelImages shifted, re-map the stored indexes so eg. set-album keeps hitting the right image
         var pathIndexMap = ({})
         for (i = 0; i < idListModelImages.count; i++) {
@@ -1710,6 +1775,9 @@ Page {
         }
         for (l = 0; l < idListModelFavourites.count; l++) {
             idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
+        }
+        for (l = 0; l < idListModelTimelineFiltered.count; l++) {
+            idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
         }
         for (k = 0; k < idListModelImagesAlbum.count; k++) {
             idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
@@ -1786,6 +1854,13 @@ Page {
             for (l = 0; l < idListModelSearch.count; l++) {
                 if (idListModelSearch.get(l).filePath === filePath) {
                     idListModelSearch.setProperty(l, "isFavourite", valueIsFavourite)
+                }
+            }
+
+            // possibly update the filtered timeline as well
+            for (l = 0; l < idListModelTimelineFiltered.count; l++) {
+                if (idListModelTimelineFiltered.get(l).filePath === filePath) {
+                    idListModelTimelineFiltered.setProperty(l, "isFavourite", valueIsFavourite)
                 }
             }
         }

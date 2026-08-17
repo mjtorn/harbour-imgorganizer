@@ -92,6 +92,9 @@ MouseArea {
                                 if (triggeredFrom === "fromFolder") {
                                     applyFolderAlbumFilter()
                                 }
+                                else if (triggeredFrom === "fromTimeline") {
+                                    applyTimelineAlbumFilter()
+                                }
                                 text = ""
                                 hide()
                             }
@@ -120,15 +123,23 @@ MouseArea {
                             contentHeight: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum ) ? Theme.itemSizeExtraSmall : 0
                             onClicked: {
                                 if (filterMode === true) {
-                                    setFolderAlbumFilter( album_name )
+                                    if (triggeredFrom === "fromTimeline") {
+                                        setTimelineAlbumFilter( album_name )
+                                    }
+                                    else {
+                                        setFolderAlbumFilter( album_name )
+                                    }
                                 }
                                 else {
                                     for (var j = 0; j < targetAlbumPathList.length; j++) {
                                         setModelImagesAndDB( j, targetAlbumPathList[j], album_name )
                                     }
-                                    // images set to another album must leave the currently filtered folder view
+                                    // images set to another album must leave the currently filtered view
                                     if (triggeredFrom === "fromFolder") {
                                         applyFolderAlbumFilter()
+                                    }
+                                    else if (triggeredFrom === "fromTimeline") {
+                                        applyTimelineAlbumFilter()
                                     }
                                 }
                                 hide()

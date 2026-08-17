@@ -160,6 +160,14 @@
         <translation>Uppdaterar EXIF-cachen</translation>
     </message>
     <message>
+        <source>Filter by album</source>
+        <translation>Filtrera efter album</translation>
+    </message>
+    <message>
+        <source>Show all</source>
+        <translation>Visa alla</translation>
+    </message>
+    <message>
         <source>May</source>
         <translation>Maj</translation>
     </message>
