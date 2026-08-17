@@ -623,8 +623,7 @@ Page {
                     text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
                     onClicked: {
                         if (timelineAlbumFilter !== "") {
-                            timelineAlbumFilter = ""
-                            idListModelTimelineFiltered.clear()
+                            clearTimelineAlbumFilter()
                         }
                         else {
                             bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromTimeline", "triggeredOnFirstPage", true )
@@ -1279,8 +1278,7 @@ Page {
                 text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
                 onClicked: {
                     if (timelineAlbumFilter !== "") {
-                        timelineAlbumFilter = ""
-                        idListModelTimelineFiltered.clear()
+                        clearTimelineAlbumFilter()
                     }
                     else {
                         bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromTimeline", "triggeredOnFirstPage", true )
@@ -1716,16 +1714,33 @@ Page {
         }
     }
 
-    function reverseTimelineOrder() {
-        // remember what is centered on screen right now, the reversal must keep it there
-        var visibleModelCount = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered.count : idListModelImages.count
+    function centeredTimelineIndex() {
+        // index of the image currently centered on screen, the center may hit a section header or the row spacing so probe around it
         var centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 )
-        if (centeredIndex < 0) { // center may hit a section header or the row spacing, probe around it
+        if (centeredIndex < 0) {
             centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 + minimumTimelineListItemHeight / 2 )
         }
         if (centeredIndex < 0) {
             centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 - minimumTimelineListItemHeight / 2 )
         }
+        return centeredIndex
+    }
+
+    function clearTimelineAlbumFilter() {
+        // keep the centered image centered when going back to the full list, its position there is the stored base index
+        var centeredIndex = centeredTimelineIndex()
+        var mainListIndex = (centeredIndex >= 0) ? idListModelTimelineFiltered.get(centeredIndex).listModelImages_baseIndex : -1
+        timelineAlbumFilter = ""
+        idListModelTimelineFiltered.clear()
+        if (mainListIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( mainListIndex, ListView.Center )
+        }
+    }
+
+    function reverseTimelineOrder() {
+        // remember what is centered on screen right now, the reversal must keep it there
+        var visibleModelCount = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered.count : idListModelImages.count
+        var centeredIndex = centeredTimelineIndex()
 
         // flip the stored direction so the next scan sorts the same way
         timelineSortDirection = (timelineSortDirection === "0") ? "1" : "0"
