@@ -232,6 +232,10 @@
         <translation>Zum Datum springen</translation>
     </message>
     <message>
+        <source>Saved as new copy</source>
+        <translation>Als neue Kopie gespeichert</translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation>Neueste zuerst anzeigen</translation>
     </message>

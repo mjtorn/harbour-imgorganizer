@@ -3,6 +3,7 @@ import Sailfish.Silica 1.0
 import io.thp.pyotherside 1.5
 import Nemo.Thumbnailer 1.0
 import QtFeedback 5.0 // haptic effects
+import Nemo.Notifications 1.0 // popup when an edit saved a new copy
 import Sailfish.Share 1.0
 import QtGraphicalEffects 1.0
 
@@ -193,6 +194,11 @@ Page {
     ListModel {
         id: idListModelTimelineFiltered
     }
+    Notification {
+        id: idNotificationEditSaved
+        isTransient: true
+        urgency: Notification.Low
+    }
     ShareAction {
         id: shareActionZip
         mimeType: "application/zip"
@@ -315,6 +321,11 @@ Page {
                 countDistinctFolders()
                 randomizeDistinctFoldersArray()
                 randomCoverImage()
+
+                // re-fill a folder or album grid that may still be open, a rescan cleared its model and only rebuilt the main lists
+                if (currentFolder !== "") { getImagesInFolder(currentFolder) }
+                if (currentAlbum !== "") { getImagesInAlbum(currentAlbum) }
+
                 fileList = []
                 dbFavouritesArray = []
                 dbPathAlbumsArray = []
@@ -395,6 +406,17 @@ Page {
                     console.log("could not delete " + failedPathArray.length + " file(s): " + failedPathArray)
                 }
                 removeDeletedFilesFromLists(deletedPathArray)
+            });
+            setHandler('editedImageSaved', function(copyPath) {
+                lastEditedImagePath = copyPath
+                idNotificationEditSaved.previewSummary = qsTr("Saved as new copy")
+                idNotificationEditSaved.previewBody = copyPath.split("/").pop()
+                idNotificationEditSaved.publish()
+                // bring the copy into all lists, the guard keeps a bulk edit from stacking rescans
+                if (finishedLoading === true) {
+                    clearAllLists()
+                    py.scanForImages()
+                }
             });
             setHandler('updateImage', function() {
                 reloadImage = true
@@ -1896,11 +1918,15 @@ Page {
         var fromPage = deleteRequestSourcePage
         deleteRequestSourcePage = ""
 
-        // remove from DB, checks automatically if available or not
+        // remove from DB, checks automatically if available or not, and scrub global image references so nothing keeps loading a dead path
         for (var j = 0; j < deletedPathArray.length; j++) {
             storageItem.removeAlbum(deletedPathArray[j])
             storageItem.removeKeywords(deletedPathArray[j])
+            if (coverImagePath === deletedPathArray[j]) { coverImagePath = "" }
+            if (lastEditedImagePath === deletedPathArray[j]) { lastEditedImagePath = "" }
+            if (currentSlideshowImagePath === deletedPathArray[j] || currentSlideshowImagePath === "file://" + deletedPathArray[j]) { currentSlideshowImagePath = "" }
         }
+        lastDeletedPathsArray = deletedPathArray // open pages prune their own image lists through this
 
         // bugfix: if there are too many images 2 delete, the list counting takes too long and blocks UI, we therefore just call a complete rescan to fill up lists
         if (deletedPathArray.length >= imagesWorkload2Rescan) {

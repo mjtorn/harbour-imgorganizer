@@ -18,7 +18,9 @@ ApplicationWindow {
     property var amountDetails : parseInt(storageItem.getSetting("infoTimeShowDetailsIndex", 0))
     property var infoWidthDevider : parseInt(storageItem.getSetting("infoWidthDevider", 3))
     property var infoActivateCoverImages : parseInt(storageItem.getSetting("infoActivateCoverImages", 0))
-    property var infoStrictReadOnly : parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) // 1 = never write into image files, editing disabled
+    property var infoStrictReadOnly : parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) // 1 = never write metadata into image files
+    property string lastEditedImagePath : "" // edits always save a copy, this is the most recent one
+    property var lastDeletedPathsArray : [] // the most recently deleted files, open pages prune their own image references with it
     property var coverImageChangeInterval : parseInt(storageItem.getSetting("coverImageChangeInterval", 5000))
 
     // cover progress and image path

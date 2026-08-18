@@ -13,6 +13,34 @@ Page {
     // own values
     property color buttonBackgroundColor: Theme.rgba(Theme.highlightDimmerColor, 1)
     property var currentImagePath : allCurrentModelImagePathsArray[currentImageIndex]
+    property var trackedDeletedPaths : lastDeletedPathsArray // watchdog pattern: prune deleted files so swiping and the slideshow never hit them
+    onTrackedDeletedPathsChanged: {
+        if (trackedDeletedPaths.length === 0 || status !== PageStatus.Active) { return }
+        var shownPath = currentImagePath
+        var cleanedPathsArray = []
+        for (var i = 0; i < allCurrentModelImagePathsArray.length; i++) {
+            if (trackedDeletedPaths.indexOf(allCurrentModelImagePathsArray[i]) === -1) {
+                cleanedPathsArray.push(allCurrentModelImagePathsArray[i])
+            }
+        }
+        if (cleanedPathsArray.length === allCurrentModelImagePathsArray.length) { return } // nothing shown here was deleted
+        if (cleanedPathsArray.length === 0) {
+            pageStack.pop()
+            return
+        }
+        allCurrentModelImagePathsArray = cleanedPathsArray
+        var newIndex = cleanedPathsArray.indexOf(shownPath)
+        currentImageIndex = (newIndex !== -1) ? newIndex : Math.min(currentImageIndex, cleanedPathsArray.length - 1)
+    }
+    property string trackedEditedImagePath : lastEditedImagePath // watchdog pattern: an edit saved a new copy, show it right away
+    onTrackedEditedImagePathChanged: {
+        if (trackedEditedImagePath !== "") {
+            // swap the copy into the path array instead of assigning currentImagePath, that would break its binding and kill swiping
+            var updatedPathsArray = allCurrentModelImagePathsArray
+            updatedPathsArray[currentImageIndex] = trackedEditedImagePath
+            allCurrentModelImagePathsArray = updatedPathsArray
+        }
+    }
     property bool finishedLoadingView : false
     property real minMouseMoveXSwipeImage : Theme.itemSizeMedium
     property real flickScale : flick.contentWidth / flick.width
@@ -174,7 +202,7 @@ Page {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     autoTransform: true
-                    source: (reloadImage === false) ? currentImagePath : ""
+                    source: (reloadImage === false && currentImagePath !== undefined) ? currentImagePath : ""
                     cache: false
                     onStatusChanged: {
                         if (status === Image.Loading) {
