@@ -32,6 +32,28 @@ Page {
         var newIndex = cleanedPathsArray.indexOf(shownPath)
         currentImageIndex = (newIndex !== -1) ? newIndex : Math.min(currentImageIndex, cleanedPathsArray.length - 1)
     }
+    // tap-to-toggle info overlay, stays visible across image switches, hidden by default
+    property bool showImageInfo : false
+    property var currentImageInfo : ({ "fileName" : "", "folderPath" : "", "dateText" : "", "album" : "", "isFavourite" : "false" })
+    onShowImageInfoChanged: refreshImageInfo()
+    onCurrentImagePathChanged: refreshImageInfo()
+
+    function refreshImageInfo() {
+        if (showImageInfo === false) { return } // costs nothing while the overlay is hidden
+        var infoObject = ({ "fileName" : "", "folderPath" : "", "dateText" : "", "album" : "", "isFavourite" : "false" })
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === currentImagePath) {
+                var imageItem = idListModelImages.get(i)
+                infoObject.fileName = imageItem.fileName
+                infoObject.folderPath = imageItem.folderPath
+                infoObject.dateText = imageItem.day + ". " + imageItem.monthYear + "   " + (new Date(imageItem.creationDateMS * 1000)).toLocaleTimeString(Qt.locale(), "hh:mm")
+                infoObject.album = (imageItem.album[0] === ".") ? imageItem.album.substring(1) : imageItem.album
+                infoObject.isFavourite = imageItem.isFavourite
+            }
+        }
+        currentImageInfo = infoObject
+    }
+
     property string trackedEditedImagePath : lastEditedImagePath // watchdog pattern: an edit saved a new copy, show it right away
     onTrackedEditedImagePathChanged: {
         if (trackedEditedImagePath !== "") {
@@ -279,6 +301,12 @@ Page {
                         onReleased: {
                             limitMouseDistanceSwipe = false
                         }
+                        onClicked: {
+                            // only a real tap toggles the info overlay, not the tail end of a swipe
+                            if (Math.abs(mouseX - position.x) < Theme.paddingLarge && Math.abs(mouseY - position.y) < Theme.paddingLarge) {
+                                showImageInfo = !showImageInfo
+                            }
+                        }
                     }
 
 
@@ -291,6 +319,68 @@ Page {
                     source: idImageView
                     brightness: 0
                     contrast: 0
+                }
+            }
+        }
+        Rectangle {
+            id: idImageInfoOverlay
+            visible: showImageInfo && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            anchors.top: parent.top
+            anchors.topMargin: upperFreeHeight
+            width: parent.width
+            height: idColumnImageInfo.height + Theme.paddingLarge
+            color: Theme.rgba(Theme.overlayBackgroundColor, 0.7)
+
+            Column {
+                id: idColumnImageInfo
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width - 2*Theme.paddingLarge
+
+                Label {
+                    width: parent.width
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.highlightColor
+                    truncationMode: TruncationMode.Fade
+                    text: currentImageInfo.fileName
+                }
+                Label {
+                    width: parent.width
+                    font.pixelSize: Theme.fontSizeTiny
+                    color: Theme.secondaryColor
+                    truncationMode: TruncationMode.Fade
+                    text: currentImageInfo.folderPath
+                }
+                Label {
+                    width: parent.width
+                    font.pixelSize: Theme.fontSizeTiny
+                    color: Theme.primaryColor
+                    text: currentImageInfo.dateText
+                }
+                Label {
+                    visible: imageSourceWidth > 0
+                    width: parent.width
+                    font.pixelSize: Theme.fontSizeTiny
+                    color: Theme.primaryColor
+                    text: imageSourceWidth + " × " + imageSourceHeight
+                }
+                Row {
+                    width: parent.width
+                    spacing: Theme.paddingMedium
+
+                    Label {
+                        font.pixelSize: Theme.fontSizeTiny
+                        color: Theme.primaryColor
+                        font.bold: true
+                        text: currentImageInfo.album
+                    }
+                    Icon {
+                        visible: currentImageInfo.isFavourite === "true"
+                        width: Theme.iconSizeExtraSmall
+                        height: width
+                        anchors.verticalCenter: parent.verticalCenter
+                        source: "image://theme/icon-m-favorite-selected?"
+                    }
                 }
             }
         }
