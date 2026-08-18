@@ -39,6 +39,7 @@ Page {
     property string deleteRequestSourcePage : "" // which page a delete came from, list cleanup happens once python reports back
     property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
     property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
+    property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
     property string timelineSortDirection : "0" // mirrors infoTimeLineDirectionIndex, "0" = newest first
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
@@ -756,6 +757,18 @@ Page {
                 contentHeight: Math.max( idListRowTimelineDescription.height, minimumTimelineListItemHeight - Theme.paddingSmall )
                 contentWidth: (idListViewTimeline.visibleArea.heightRatio < 1.0) ? (parent.width - Theme.paddingLarge*2) : (parent.width)
                 onClicked:  {
+                    // when multiselection is active a tap toggles the selection instead of opening the image
+                    if (multiSelectActive === true) {
+                        if (selected) {
+                            selected = false
+                            timelineSelectedTotal = timelineSelectedTotal - 1
+                        }
+                        else {
+                            selected = true
+                            timelineSelectedTotal = timelineSelectedTotal + 1
+                        }
+                        return
+                    }
                     var currentImageIndex = index
                     var currentTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
                     var allCurrentModelImagePathsArray = []
@@ -772,52 +785,71 @@ Page {
                 function removeFile( filePathArray ) {
                     remorseAction(qsTr("Delete file?"), function() {
                         deleteThisImage( filePathArray, "firstPage" )
+                        unselectAll()
                     })
                 }
 
                 menu: Component {
                     ContextMenu {
+                        hasContent: (multiSelectActive !== true) || (multiSelectActive === true && timelineSelectedTotal !== 0)
                         MenuItem {
                             text: qsTr("Set Album")
                             onClicked: {
-                                // with an active filter the delegate index is not the index into idListModelImages
-                                var baseIndex = (timelineAlbumFilter !== "") ? model.listModelImages_baseIndex : index
                                 var chosenFilesArray = []
-                                chosenFilesArray.push([0,filePath,baseIndex])
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            var rowBaseIndex = (timelineAlbumFilter !== "") ? activeTimelineModel.get(j).listModelImages_baseIndex : j
+                                            chosenFilesArray.push( [0, activeTimelineModel.get(j).filePath, rowBaseIndex] )
+                                            activeTimelineModel.setProperty(j, "selected", false)
+                                        }
+                                    }
+                                    multiSelectActive = false
+                                    timelineSelectedTotal = 0
+                                }
+                                else {
+                                    // with an active filter the delegate index is not the index into idListModelImages
+                                    var baseIndex = (timelineAlbumFilter !== "") ? model.listModelImages_baseIndex : index
+                                    chosenFilesArray.push([0,filePath,baseIndex])
+                                }
                                 bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, chosenFilesArray, "fromTimeline", "triggeredOnFirstPage" )
                             }
                         }
                         MenuItem {
                             text: (isFavourite !== "true") ? qsTr("Set Favourite") : qsTr("From Favourite")
                             onClicked: {
-                                if (isFavourite !== "true") { // add to favourites
+                                // only use isFavourite info from the item currently touched
+                                if (isFavourite !== "true") {
                                     var updateType = "addFavourite"
-                                    idListModelFavourites.append({
-                                                         "creationDateMS" : creationDateMS,
-                                                         "filePath" : filePath,
-                                                         "monthYear" : monthYear,
-                                                         "day" : day,
-                                                         "folderPath" : folderPath,
-                                                         "fileName" : fileName,
-                                                         "estimatedSize" : estimatedSize,
-                                                         "album" : album,
-                                                         "selected" : false,
-                                                         "exifInfo" :  album,
-                                                         "isSearchResult" : false,
-                                                         "timestampSource" : timestampSource,
-                                                         "isFavourite" : "true",
-                                                         "listModelImages_baseIndex" : (timelineAlbumFilter !== "") ? model.listModelImages_baseIndex : index
-                                                     })
                                 }
-                                else { // remove from favourites
+                                else {
                                     updateType = "removeFavourite"
                                 }
                                 var chosenFilesArray = []
-                                chosenFilesArray.push(filePath)
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            chosenFilesArray.push(activeTimelineModel.get(j).filePath)
+                                            addTimelineRowToFavourites(activeTimelineModel, j, updateType)
+                                        }
+                                    }
+                                }
+                                else {
+                                    chosenFilesArray.push(filePath)
+                                    var singleModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    addTimelineRowToFavourites(singleModel, index, updateType)
+                                }
                                 updateAllLists_isFavourite ("fromFirstPage" , updateType, chosenFilesArray)
+                                if (multiSelectActive === true) {
+                                    unselectAll()
+                                }
                             }
                         }
                         MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
                             text: qsTr("Open with")
                             onClicked: {
                                 Qt.openUrlExternally("file:///" + filePath)
@@ -830,7 +862,19 @@ Page {
                                 mimeType: "image/*"
                             }
                             onClicked: {
-                                shareAction.resources = [filePath]
+                                var sharePathsArray = []
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            sharePathsArray.push(activeTimelineModel.get(j).filePath)
+                                        }
+                                    }
+                                }
+                                else {
+                                    sharePathsArray.push(filePath)
+                                }
+                                shareAction.resources = sharePathsArray
                                 shareAction.trigger()
                             }
                         }
@@ -838,11 +882,23 @@ Page {
                             text: qsTr("Delete")
                             onClicked: {
                                 var chosenFilesArray = []
-                                chosenFilesArray.push(filePath)
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            chosenFilesArray.push(activeTimelineModel.get(j).filePath)
+                                        }
+                                    }
+                                }
+                                else {
+                                    chosenFilesArray.push(filePath)
+                                }
                                 removeFile( chosenFilesArray )
                             }
                         }
                         MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
                             text: qsTr("Info")
                             onClicked: {
                                 idImageSizeHelper.source = ""
@@ -882,6 +938,13 @@ Page {
                         asynchronous: true
                         cache: false
 
+                        Rectangle {
+                            id: idBackHighlightTimeline
+                            visible: selected
+                            anchors.fill: parent
+                            color: Theme.highlightDimmerColor
+                            opacity: 0.5
+                        }
                         Icon {
                             id: idIconFavourites
                             visible: isFavourite === "true"
@@ -1368,12 +1431,25 @@ Page {
             visible: (currentView === "timeline")
             enabled: (finishedLoading === true) && visible
             quickSelect: true
+            highlightColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
+            backgroundColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
             // the margin is functional: the lowermost item only stays highlighted for release-to-select while the drag sits
             // between the content end and the final position, and the margin is exactly that headroom - with 0 every full
             // pull lands on the final position where silica drops the highlight and locks the menu open until tapped.
             // half the default (Theme.itemSizeSmall) keeps the release zone but halves the empty space below the last item
             bottomMargin: Theme.itemSizeSmall / 2
 
+            MenuItem {
+                text: (multiSelectActive === true) ? qsTr("Unselect") : qsTr("Selection")
+                onClicked: {
+                    if (multiSelectActive === true) {
+                        unselectAll()
+                    }
+                    else {
+                        multiSelectActive = true
+                    }
+                }
+            }
             MenuItem {
                 text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
                 onClicked: {
@@ -1894,6 +1970,7 @@ Page {
     }
 
     function clearTimelineAlbumFilter() {
+        if (multiSelectActive === true) { unselectAll() } // the selection flags of the rebuilt rows would go stale
         // keep the centered image centered when going back to the full list, its position there is the stored base index
         var centeredIndex = centeredTimelineIndex()
         var mainListIndex = (centeredIndex >= 0) ? idListModelTimelineFiltered.get(centeredIndex).listModelImages_baseIndex : -1
@@ -1972,7 +2049,32 @@ Page {
         }
     }
 
+    function addTimelineRowToFavourites( sourceModel, rowIndex, updateType ) {
+        // append to the favourites model unless already there, removal happens in updateAllLists_isFavourite
+        if (updateType !== "addFavourite") { return }
+        for (var k = 0; k < idListModelFavourites.count; k++) {
+            if (idListModelFavourites.get(k).filePath === sourceModel.get(rowIndex).filePath) { return }
+        }
+        idListModelFavourites.append({
+                             "creationDateMS" : sourceModel.get(rowIndex).creationDateMS,
+                             "filePath" : sourceModel.get(rowIndex).filePath,
+                             "monthYear" : sourceModel.get(rowIndex).monthYear,
+                             "day" : sourceModel.get(rowIndex).day,
+                             "folderPath" : sourceModel.get(rowIndex).folderPath,
+                             "fileName" : sourceModel.get(rowIndex).fileName,
+                             "estimatedSize" : sourceModel.get(rowIndex).estimatedSize,
+                             "album" : sourceModel.get(rowIndex).album,
+                             "selected" : false,
+                             "exifInfo" :  sourceModel.get(rowIndex).album,
+                             "isSearchResult" : false,
+                             "timestampSource" : sourceModel.get(rowIndex).timestampSource,
+                             "isFavourite" : "true",
+                             "listModelImages_baseIndex" : (timelineAlbumFilter !== "") ? sourceModel.get(rowIndex).listModelImages_baseIndex : rowIndex
+                         })
+    }
+
     function setTimelineAlbumFilter( albumName ) {
+        if (multiSelectActive === true) { unselectAll() } // the selection flags of the rebuilt rows would go stale
         // resolve the centered image to its position in the main list, the filter should land on the closest date instead of the top
         var centeredIndex = centeredTimelineIndex()
         var centeredBaseIndex = -1
@@ -2286,7 +2388,18 @@ Page {
     }
 
     function unselectAll() {
-        //console.log("fake function, called from bannerResize.hide(), but does nothing here, only on albumPage")
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).selected === true) {
+                idListModelImages.setProperty(i, "selected", false)
+            }
+        }
+        for (i = 0; i < idListModelTimelineFiltered.count; i++) {
+            if (idListModelTimelineFiltered.get(i).selected === true) {
+                idListModelTimelineFiltered.setProperty(i, "selected", false)
+            }
+        }
+        multiSelectActive = false
+        timelineSelectedTotal = 0
     }
 
     function randomCoverImage() {

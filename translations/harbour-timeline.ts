@@ -192,6 +192,14 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Selection</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unselect</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation type="unfinished"></translation>
     </message>

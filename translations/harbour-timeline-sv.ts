@@ -188,6 +188,14 @@
         <translation>DUBBLETTER</translation>
     </message>
     <message>
+        <source>Selection</source>
+        <translation>Markera</translation>
+    </message>
+    <message>
+        <source>Unselect</source>
+        <translation>Avmarkera</translation>
+    </message>
+    <message>
         <source>Refresh</source>
         <translation>Uppdatera</translation>
     </message>

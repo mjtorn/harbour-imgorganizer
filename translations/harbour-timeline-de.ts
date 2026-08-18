@@ -244,6 +244,14 @@
         <translation>DUPLIKATE</translation>
     </message>
     <message>
+        <source>Selection</source>
+        <translation>Mehrfachauswahl</translation>
+    </message>
+    <message>
+        <source>Unselect</source>
+        <translation>Abwählen</translation>
+    </message>
+    <message>
         <source>Refresh</source>
         <translation>Aktualisieren</translation>
     </message>
