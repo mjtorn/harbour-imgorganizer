@@ -176,6 +176,10 @@
         <translation>Hoppa till datum</translation>
     </message>
     <message>
+        <source>Saved as new copy</source>
+        <translation>Sparad som ny kopia</translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation>Visa nyaste först</translation>
     </message>

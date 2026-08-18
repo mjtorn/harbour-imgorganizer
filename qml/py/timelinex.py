@@ -97,14 +97,34 @@ def bool_canSaveWithIPTC( filePath ):
     return saveWithIPTC, iptc_info
 
 
+def buildEditedCopyPath ( filePath ):
+    dotIndex = filePath.rfind(".")
+    copyPath = filePath[:dotIndex] + "_edited" + filePath[dotIndex:]
+    copyNumber = 2
+    while os.path.exists(copyPath):
+        copyPath = filePath[:dotIndex] + "_edited" + str(copyNumber) + filePath[dotIndex:]
+        copyNumber += 1
+    return copyPath
+
+
 def saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info ):
+    # edits never touch the original, the result is always saved as a new copy next to it
+    copyPath = buildEditedCopyPath( filePath )
     if saveWithExif is True:
-        output_img.save(filePath, compress_level=1, exif=exif_bytes)
+        output_img.save(copyPath, compress_level=1, exif=exif_bytes)
     else:
-        output_img.save(filePath, compress_level=1)
+        output_img.save(copyPath, compress_level=1)
     if saveWithIPTC is True:
-        iptc_info.save_as( filePath )
+        # carry the IPTC keywords over onto the copy - iptc_info.save_as would clobber the copy with the original's pixel data
+        try:
+            iptc_copy = iptcinfo3.IPTCInfo( copyPath, force=True )
+            iptc_copy['keywords'] = iptc_info['keywords']
+            iptc_copy.save()
+        except: # keywords also live in the DB, losing them inside the copy is not fatal
+            pass
     pyotherside.send('updateImage', )
+    pyotherside.send('editedImageSaved', copyPath)
+    return copyPath
 
 
 
@@ -145,11 +165,11 @@ def imageCropFunction ( filePath, rectX, rectY, rectWidth, rectHeight, scaleFact
     rectHeight_real = int(rectHeight * scaleFactor)
     area = (rectX_real, rectY_real, rectX_real+rectWidth_real, rectY_real+rectHeight_real)
     output_img = img.crop(area)
-    saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info )
+    copyPath = saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info )
     img.close()
     output_img.close()
-    newFileSize = os.stat(filePath).st_size
-    pyotherside.send('updateSingleFileSize', filePath, newFileSize )
+    newFileSize = os.stat(copyPath).st_size
+    pyotherside.send('updateSingleFileSize', copyPath, newFileSize )
 
 
 def imageColorizeFunction ( filePath, brightnessFactor, contrastFactor ):
@@ -182,12 +202,12 @@ def imageResizeFunction ( filePath, targetWidth, targetHeight ):
     saveWithIPTC, iptc_info = bool_canSaveWithIPTC( filePath )
     img = ImageOps.exif_transpose(img)
     output_img = img.resize( (int(targetWidth), int(targetHeight)), Image.ANTIALIAS )
-    saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info )
+    copyPath = saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info )
     img.close()
     output_img.close()
     pyotherside.send('batchResizeProgress', 100)
-    newFileSize = os.stat(filePath).st_size
-    pyotherside.send('updateSingleFileSize', filePath, newFileSize )
+    newFileSize = os.stat(copyPath).st_size
+    pyotherside.send('updateSingleFileSize', copyPath, newFileSize )
 
 def imageBulkResizeFunction ( imagePathsList, targetWidth, targetHeight, targetDirection ):
     allfilePathList = []
@@ -210,12 +230,12 @@ def imageBulkResizeFunction ( imagePathsList, targetWidth, targetHeight, targetD
                 heightPercent = (baseHeight/float(img.size[1]))
                 propWidth = int((float(img.size[0])*float(heightPercent)))
                 output_img = img.resize( (propWidth, baseHeight), Image.ANTIALIAS )
-            saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info )
+            copyPath = saveEditedImage ( output_img, filePath, saveWithExif, exif_bytes, saveWithIPTC, iptc_info )
             img.close()
             output_img.close()
 
-            newFileSize = os.stat(filePath).st_size
-            pyotherside.send('updateSingleFileSize', filePath, newFileSize )
+            newFileSize = os.stat(copyPath).st_size
+            pyotherside.send('updateSingleFileSize', copyPath, newFileSize )
             progressCounter += 1
             progressResizing = progressCounter / amountFiles * 100
             pyotherside.send('batchResizeProgress', progressResizing)

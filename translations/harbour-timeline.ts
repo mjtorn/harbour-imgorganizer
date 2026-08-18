@@ -176,6 +176,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Saved as new copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Show newest first</source>
         <translation type="unfinished"></translation>
     </message>
