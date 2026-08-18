@@ -17,6 +17,7 @@ Page {
     property string standardAlbum : "." + qsTr("UNSORTED")
     property string standardSearchAlbum : "." + qsTr("SEARCH")
     property string standardFavouritesAlbum : "." + qsTr("FAVOURITES")
+    property string standardDuplicatesAlbum : "." + qsTr("DUPLICATES")
     property var standardScreenWidth
     property var standardScreenHeight
     property string currentAlbum : ""
@@ -198,6 +199,9 @@ Page {
         id: idNotificationEditSaved
         isTransient: true
         urgency: Notification.Low
+    }
+    ListModel {
+        id: idListModelDuplicates
     }
     ShareAction {
         id: shareActionZip
@@ -407,6 +411,39 @@ Page {
                 }
                 removeDeletedFilesFromLists(deletedPathArray)
             });
+            setHandler('returnDuplicateImages', function(duplicateGroups) {
+                idListModelDuplicates.clear()
+                var pathIndexMap = ({})
+                for (var i = 0; i < idListModelImages.count; i++) {
+                    pathIndexMap[idListModelImages.get(i).filePath] = i
+                }
+                for (var g = 0; g < duplicateGroups.length; g++) {
+                    for (var m = 0; m < duplicateGroups[g].length; m++) {
+                        var baseIndex = pathIndexMap[duplicateGroups[g][m]]
+                        if (baseIndex !== undefined) {
+                            var imageItem = idListModelImages.get(baseIndex)
+                            idListModelDuplicates.append({
+                                "creationDateMS" : imageItem.creationDateMS,
+                                "filePath" : imageItem.filePath,
+                                "monthYear" : imageItem.monthYear,
+                                "day" : imageItem.day,
+                                "folderPath" : imageItem.folderPath,
+                                "fileName" : imageItem.fileName,
+                                "estimatedSize" : imageItem.estimatedSize,
+                                "album" : imageItem.album,
+                                "selected" : false,
+                                "exifInfo" :  imageItem.album,
+                                "isSearchResult" : false,
+                                "timestampSource" : imageItem.timestampSource,
+                                "isFavourite" : imageItem.isFavourite,
+                                "listModelImages_baseIndex" : baseIndex
+                            })
+                        }
+                    }
+                }
+                countDistinctAlbums()
+                finishedLoading = true
+            });
             setHandler('editedImageSaved', function(copyPath) {
                 lastEditedImagePath = copyPath
                 idNotificationEditSaved.previewSummary = qsTr("Saved as new copy")
@@ -532,6 +569,9 @@ Page {
         }
         function deleteFilesFunction( deletePathArray ) {
             call("timelinex.deleteFilesFunction", [ deletePathArray ])
+        }
+        function findDuplicateImages( allPathsArray, tolerance ) {
+            call("timelinex.findDuplicateImages", [ allPathsArray, tolerance ])
         }
         function renameOriginalFunction( currentPath ) {
             //var currentPath = "/" + origImageFilePath.replace(/^(file:\/{3})|(qrc:\/{2})|(http:\/{2})/,"")
@@ -921,6 +961,12 @@ Page {
                 enabled: finishedLoading === true
 
                 MenuItem {
+                    text: qsTr("Find duplicates")
+                    onClicked: {
+                        runDuplicateSearch()
+                    }
+                }
+                MenuItem {
                     text: qsTr("Search")
                     onClicked: {
                         bannerSearch.notify( Theme.highlightDimmerColor )
@@ -978,7 +1024,7 @@ Page {
                         }
 
                         MenuItem {
-                            visible: (album_name !== standardAlbum && album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum )
+                            visible: (album_name !== standardAlbum && album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum )
                             text: qsTr("Rename")
                             onClicked: bannerRename.notify( Theme.highlightDimmerColor, album_name )
                         }
@@ -1012,7 +1058,7 @@ Page {
                 Rectangle {
                     anchors.fill: parent
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: (album_name !== standardSearchAlbum && album_name !== standardAlbum && album_name !== standardFavouritesAlbum) ? (Theme.rgba(Theme.primaryColor, 0.15)) : (Theme.secondaryHighlightColor) }
+                        GradientStop { position: 0.0; color: (album_name !== standardSearchAlbum && album_name !== standardAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum) ? (Theme.rgba(Theme.primaryColor, 0.15)) : (Theme.secondaryHighlightColor) }
                         GradientStop { position: 1; color: Theme.rgba(Theme.primaryColor, 0.02) }
                     }
 
@@ -1069,7 +1115,7 @@ Page {
                     truncationMode: TruncationMode.Elide
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: infoWidthDevider === 2 ? Theme.fontSizeSmall : Theme.fontSizeExtraSmall
-                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum))
+                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum || album_name === standardDuplicatesAlbum))
                           ? (album_name.substring(1))
                           : (album_name)
                 }
@@ -1091,7 +1137,7 @@ Page {
                     truncationMode: TruncationMode.Elide
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: infoWidthDevider === 2 ? Theme.fontSizeMedium : Theme.fontSizeExtraSmall
-                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum))
+                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum || album_name === standardDuplicatesAlbum))
                           ? ( (album_name.substring(1)) + " - " + album_count )
                           : ( album_name + " - " + album_count )
                     Rectangle {
@@ -1451,6 +1497,7 @@ Page {
         idListModelSearch.clear()
         idListModelFavourites.clear()
         idListModelTimelineFiltered.clear()
+        idListModelDuplicates.clear()
         timelineAlbumFilter = ""
     }
 
@@ -1472,6 +1519,9 @@ Page {
         }
         if (idListModelFavourites.count > 0) {
             distinctAlbums.push( standardFavouritesAlbum ) // visible when there are favorites
+        }
+        if (idListModelDuplicates.count > 0) {
+            distinctAlbums.push( standardDuplicatesAlbum ) // visible when duplicates were searched and found
         }
         distinctAlbums = distinctAlbums.sort()
 
@@ -1495,6 +1545,14 @@ Page {
                 if (counter > 0 && infoActivateCoverImages) {
                     randomIndex = randomIntFromInterval(0, counter-1)
                     randomFilePath = idListModelFavourites.get(randomIndex).filePath
+                }
+            }
+            // duplicates album
+            else if (distinctAlbums[j] === standardDuplicatesAlbum) {
+                counter = idListModelDuplicates.count
+                if (counter > 0 && infoActivateCoverImages) {
+                    randomIndex = randomIntFromInterval(0, counter-1)
+                    randomFilePath = idListModelDuplicates.get(randomIndex).filePath
                 }
             }
             // other albums
@@ -1562,7 +1620,7 @@ Page {
         currentAlbum = albumName
         idListModelImagesAlbum.clear()
 
-        if (albumName !== standardSearchAlbum && albumName !== standardFavouritesAlbum) {
+        if (albumName !== standardSearchAlbum && albumName !== standardFavouritesAlbum && albumName !== standardDuplicatesAlbum) {
             for (var i = 0; i < idListModelImages.count; i++) {
                 if ( (idListModelImages.get(i).album) === albumName ) {
                     idListModelImagesAlbum.append({
@@ -1582,6 +1640,27 @@ Page {
                         "listModelImages_baseIndex" : i
                     })
                 }
+            }
+        }
+
+        else if (albumName === standardDuplicatesAlbum) {
+            for (i = 0; i < idListModelDuplicates.count; i++) {
+                idListModelImagesAlbum.append({
+                    "creationDateMS" : idListModelDuplicates.get(i).creationDateMS,
+                    "filePath" : idListModelDuplicates.get(i).filePath,
+                    "monthYear" : idListModelDuplicates.get(i).monthYear,
+                    "day" : idListModelDuplicates.get(i).day,
+                    "folderPath" : idListModelDuplicates.get(i).folderPath,
+                    "fileName" : idListModelDuplicates.get(i).fileName,
+                    "estimatedSize" : idListModelDuplicates.get(i).estimatedSize,
+                    "album" : idListModelDuplicates.get(i).album,
+                    "selected" : false,
+                    "exifInfo" :  idListModelDuplicates.get(i).album,
+                    "isSearchResult" : false,
+                    "timestampSource" : idListModelDuplicates.get(i).timestampSource,
+                    "isFavourite" : idListModelDuplicates.get(i).isFavourite,
+                    "listModelImages_baseIndex" : idListModelDuplicates.get(i).listModelImages_baseIndex
+                })
             }
         }
 
@@ -1635,6 +1714,11 @@ Page {
         // search album
         if (albumName === standardSearchAlbum) {
             idListModelSearch.clear()
+        }
+
+        // duplicates album
+        else if (albumName === standardDuplicatesAlbum) {
+            idListModelDuplicates.clear()
         }
 
         // favourites album
@@ -1760,11 +1844,31 @@ Page {
         for (l = 0; l < idListModelTimelineFiltered.count; l++) {
             idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
         }
+        for (l = 0; l < idListModelDuplicates.count; l++) {
+            idListModelDuplicates.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelDuplicates.get(l).filePath])
+        }
         for (var k = 0; k < idListModelImagesAlbum.count; k++) {
             idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
         }
         for (var o = 0; o < idListModelImagesFolder.count; o++) {
             idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+        }
+    }
+
+    function runDuplicateSearch() {
+        // hashing every image takes a while on the first run, later runs reuse the cached hashes
+        var allPathsArray = []
+        for (var i = 0; i < idListModelImages.count; i++) {
+            allPathsArray.push(idListModelImages.get(i).filePath)
+        }
+        finishedLoading = false
+        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : 4 )
+    }
+
+    property var trackedDuplicateTolerance : infoDuplicateTolerance // watchdog pattern: a changed matching setting rebuilds existing results
+    onTrackedDuplicateToleranceChanged: {
+        if (idListModelDuplicates.count > 0) {
+            runDuplicateSearch()
         }
     }
 
@@ -2020,6 +2124,13 @@ Page {
             }
         }
 
+        // possibly remove from the duplicates results as well
+        for ( l = idListModelDuplicates.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelDuplicates.get(l).filePath] === true) {
+                idListModelDuplicates.remove(l)
+            }
+        }
+
         // positions into idListModelImages shifted, re-map the stored indexes so eg. set-album keeps hitting the right image
         remapBaseIndexes()
 
@@ -2100,6 +2211,13 @@ Page {
                     idListModelTimelineFiltered.setProperty(l, "isFavourite", valueIsFavourite)
                 }
             }
+
+            // possibly update the duplicates results as well
+            for (l = 0; l < idListModelDuplicates.count; l++) {
+                if (idListModelDuplicates.get(l).filePath === filePath) {
+                    idListModelDuplicates.setProperty(l, "isFavourite", valueIsFavourite)
+                }
+            }
         }
         countDistinctAlbums()
     }
@@ -2118,6 +2236,12 @@ Page {
             else if (currentNameOrFolder === standardSearchAlbum) {
                 for (i = 0; i < idListModelSearch.count; i++) {
                     imagePathsList = imagePathsList + (idListModelSearch.get(i).filePath).toString() + "|||"
+                }
+            }
+            // case duplicates album
+            else if (currentNameOrFolder === standardDuplicatesAlbum) {
+                for (i = 0; i < idListModelDuplicates.count; i++) {
+                    imagePathsList = imagePathsList + (idListModelDuplicates.get(i).filePath).toString() + "|||"
                 }
             }
             // all other albums

@@ -180,6 +180,14 @@
         <translation>Sparad som ny kopia</translation>
     </message>
     <message>
+        <source>Find duplicates</source>
+        <translation>Hitta dubbletter</translation>
+    </message>
+    <message>
+        <source>DUPLICATES</source>
+        <translation>DUBBLETTER</translation>
+    </message>
+    <message>
         <source>Refresh</source>
         <translation>Uppdatera</translation>
     </message>
@@ -476,6 +484,22 @@
     <message>
         <source>Metadata read-only: </source>
         <translation>Skrivskyddad metadata: </translation>
+    </message>
+    <message>
+        <source>Duplicate matching: </source>
+        <translation>Dublettmatchning: </translation>
+    </message>
+    <message>
+        <source>images that look the same</source>
+        <translation>bilder som ser likadana ut</translation>
+    </message>
+    <message>
+        <source>exact</source>
+        <translation>exakt</translation>
+    </message>
+    <message>
+        <source>near</source>
+        <translation>nära</translation>
     </message>
     <message>
         <source>never write metadata into image files</source>

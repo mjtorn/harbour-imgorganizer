@@ -177,9 +177,18 @@
     </message>
     <message>
         <source>Refresh</source>
+        <translation></translation>
     </message>
     <message>
         <source>Saved as new copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Find duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>DUPLICATES</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -472,6 +481,22 @@
     <name>SettingsPage</name>
     <message>
         <source>Metadata read-only: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Duplicate matching: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>images that look the same</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>exact</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>near</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

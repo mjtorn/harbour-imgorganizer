@@ -236,6 +236,14 @@
         <translation>Als neue Kopie gespeichert</translation>
     </message>
     <message>
+        <source>Find duplicates</source>
+        <translation>Duplikate suchen</translation>
+    </message>
+    <message>
+        <source>DUPLICATES</source>
+        <translation>DUPLIKATE</translation>
+    </message>
+    <message>
         <source>Refresh</source>
         <translation>Aktualisieren</translation>
     </message>
@@ -476,6 +484,22 @@
     <message>
         <source>Metadata read-only: </source>
         <translation>Metadaten schreibgeschützt: </translation>
+    </message>
+    <message>
+        <source>Duplicate matching: </source>
+        <translation>Duplikaterkennung: </translation>
+    </message>
+    <message>
+        <source>images that look the same</source>
+        <translation>Bilder die gleich aussehen</translation>
+    </message>
+    <message>
+        <source>exact</source>
+        <translation>exakt</translation>
+    </message>
+    <message>
+        <source>near</source>
+        <translation>ähnlich</translation>
     </message>
     <message>
         <source>never write metadata into image files</source>

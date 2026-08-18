@@ -116,11 +116,11 @@ MouseArea {
 
                         model: idListModelAlbums
                         delegate: ListItem {
-                            visible: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum )
+                            visible: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum )
                             enabled: visible
                             contentX: idBackgroundRect.radius
                             contentWidth: parent.width - 2* contentX
-                            contentHeight: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum ) ? Theme.itemSizeExtraSmall : 0
+                            contentHeight: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum ) ? Theme.itemSizeExtraSmall : 0
                             onClicked: {
                                 if (filterMode === true) {
                                     if (triggeredFrom === "fromTimeline") {
@@ -231,7 +231,8 @@ MouseArea {
             for (var l=idListModelImagesAlbum.count -1 ; l >= 0; --l) {
                 if ( (idListModelImagesAlbum.get(l).filePath).toString() === (targetImagePath).toString() ) {
                     if ( (idListModelImagesAlbum.get(l).album).toString() !== (targetAlbumName).toString() ) {
-                        if ( currentAlbum !== standardFavouritesAlbum && currentAlbum !== standardSearchAlbum ) {
+                        // DUPLICATES is not a filter but a finding: filing an image does not stop it being a duplicate
+                        if ( currentAlbum !== standardFavouritesAlbum && currentAlbum !== standardSearchAlbum && currentAlbum !== standardDuplicatesAlbum ) {
                             idListModelImagesAlbum.remove(l)
                         }
                     }

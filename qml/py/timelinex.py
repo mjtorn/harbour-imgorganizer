@@ -40,6 +40,7 @@ extensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.tif', '.TIF', 
 exifEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.tif', '.tiff', '.TIF', '.TIFF')
 iptcEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG')
 exifCacheVersion = 1                # bump when the cached tuple layout changes -> forces a clean cache rebuild
+dHashCacheVersion = 1               # bump when the perceptual hash layout changes -> forces a clean cache rebuild
 
 
 
@@ -355,6 +356,112 @@ def exifCachePath():
     cacheDir = os.environ.get("XDG_CACHE_HOME", str(Path.home()) + "/.cache") + "/harbour-timeline"
     os.makedirs(cacheDir, exist_ok=True)
     return cacheDir + "/exifCache.pickle"
+
+
+def dHashCachePath():
+    cacheDir = os.environ.get("XDG_CACHE_HOME", str(Path.home()) + "/.cache") + "/harbour-timeline"
+    os.makedirs(cacheDir, exist_ok=True)
+    return cacheDir + "/dhashCache.pickle"
+
+
+def buildImageDHash ( filePath ):
+    # 64 bit perceptual difference hash, visually identical re-encodes get the same value
+    img = Image.open(filePath)
+    img.draft('L', (72, 72)) # decodes jpgs at reduced scale, much faster, no-op for other formats
+    img = img.convert('L').resize( (9, 8), Image.LANCZOS ) # same filter as ANTIALIAS, the name survives newer pillow versions
+    pixelData = list(img.getdata())
+    img.close()
+    dHash = 0
+    for row in range(8):
+        for col in range(8):
+            dHash = (dHash << 1) | (1 if pixelData[row*9+col] < pixelData[row*9+col+1] else 0)
+    return dHash
+
+
+def findDuplicateImages ( filePathList, tolerance ):
+    # load the whole dhash cache once, any load problem -> rebuild from scratch, that keeps the cache clean
+    cachedHashDict = {}
+    try:
+        with open(dHashCachePath(), 'rb') as cacheFile:
+            cacheVersion, cachedHashDict = pickle.load(cacheFile)
+        if cacheVersion != dHashCacheVersion:
+            cachedHashDict = {}
+    except:
+        cachedHashDict = {}
+
+    imagesTotalAmount = len(filePathList)
+    someHashCounter = 0
+    hashByPath = {}
+    newCacheEntries = {}
+    for filePath in filePathList:
+        someHashCounter += 1
+        pyotherside.send('scanProgress', someHashCounter, imagesTotalAmount)
+        try:
+            statResult = os.stat(filePath)
+            if filePath in cachedHashDict and cachedHashDict[filePath][0] == statResult.st_mtime:
+                hashByPath[filePath] = cachedHashDict[filePath][1]
+            else:
+                imageDHash = buildImageDHash( filePath )
+                hashByPath[filePath] = imageDHash
+                newCacheEntries[filePath] = (statResult.st_mtime, imageDHash)
+        except: # unreadable file -> just skip it
+            pass
+
+    # add fresh hashes to the cache and drop entries of deleted files
+    scannedPathsSet = set(filePathList)
+    deadCachePaths = [cachedPath for cachedPath in cachedHashDict if cachedPath not in scannedPathsSet and not os.path.exists(cachedPath)]
+    if len(newCacheEntries) > 0 or len(deadCachePaths) > 0:
+        for cachedPath in deadCachePaths:
+            del cachedHashDict[cachedPath]
+        cachedHashDict.update(newCacheEntries)
+        try:
+            with open(dHashCachePath() + ".tmp", 'wb') as cacheFile:
+                pickle.dump( (dHashCacheVersion, cachedHashDict), cacheFile )
+            os.replace(dHashCachePath() + ".tmp", dHashCachePath())
+        except: # e.g. read-only filesystem -> no cache this time, gets rebuilt on next run
+            pass
+
+    # group the hashes, exact match via one dict, near match via 16 bit chunk buckets (pigeonhole: distance <= 3 shares a chunk, verify real distance after)
+    groupOfPath = {}
+    if tolerance == 0:
+        pathsByHash = {}
+        for filePath in filePathList:
+            if filePath in hashByPath:
+                pathsByHash.setdefault(hashByPath[filePath], []).append(filePath)
+        duplicateGroups = [pathGroup for pathGroup in pathsByHash.values() if len(pathGroup) > 1]
+    else:
+        candidateBuckets = {}
+        for filePath in filePathList:
+            if filePath in hashByPath:
+                imageDHash = hashByPath[filePath]
+                for chunkIndex in range(4):
+                    candidateBuckets.setdefault( (chunkIndex, (imageDHash >> (chunkIndex * 16)) & 0xFFFF), []).append(filePath)
+        # union-find over verified pairs
+        parentOfPath = {}
+        pairedPathsSet = set()
+        def findRoot ( somePath ):
+            while parentOfPath.get(somePath, somePath) != somePath:
+                somePath = parentOfPath[somePath]
+            return somePath
+        for bucketPaths in candidateBuckets.values():
+            if len(bucketPaths) < 2:
+                continue
+            for i in range(len(bucketPaths)):
+                for j in range(i + 1, len(bucketPaths)):
+                    if bin(hashByPath[bucketPaths[i]] ^ hashByPath[bucketPaths[j]]).count("1") <= tolerance:
+                        pairedPathsSet.add(bucketPaths[i])
+                        pairedPathsSet.add(bucketPaths[j])
+                        rootA = findRoot(bucketPaths[i])
+                        rootB = findRoot(bucketPaths[j])
+                        if rootA != rootB:
+                            parentOfPath[rootA] = rootB
+        pathsByRoot = {}
+        for filePath in filePathList:
+            if filePath in pairedPathsSet:
+                pathsByRoot.setdefault(findRoot(filePath), []).append(filePath)
+        duplicateGroups = [pathGroup for pathGroup in pathsByRoot.values() if len(pathGroup) > 1]
+
+    pyotherside.send('returnDuplicateImages', duplicateGroups)
 
 
 def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):
