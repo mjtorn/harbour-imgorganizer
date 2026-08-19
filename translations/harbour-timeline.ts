@@ -43,6 +43,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Create animated gif</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Info</source>
         <translation type="unfinished"></translation>
     </message>
@@ -107,6 +111,17 @@
     </message>
     <message>
         <source>DIN-landscape</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>BannerGif</name>
+    <message>
+        <source>file name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ms</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -181,6 +196,18 @@
     </message>
     <message>
         <source>Saved as new copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>GIF created</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>GIF creation failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

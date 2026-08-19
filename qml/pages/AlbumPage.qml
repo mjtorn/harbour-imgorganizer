@@ -27,6 +27,9 @@ Page {
     BannerResize {
         id: bannerResizeFromAlbum
     }
+    BannerGif {
+        id: bannerGifFromAlbum
+    }
 
     SilicaGridView {
         id: idGridViewAlbums
@@ -378,6 +381,23 @@ Page {
                             else {
                                 getAllSelectedPaths( "createZip" )
                             }
+                        }
+                    }
+                    MenuItem {
+                        enabled: pillowAvailable && multiSelectActive && counterSelectedTotal > 1
+                        visible: enabled
+                        text: qsTr("Create animated gif")
+                        onClicked: {
+                            var gifPathsArray = []
+                            var gifAlbumsArray = []
+                            var sourceModel = (currentModel === "albums") ? idListModelImagesAlbum : idListModelImagesFolder
+                            for (var j = 0; j < sourceModel.count; j++) {
+                                if (sourceModel.get(j).selected === true) {
+                                    gifPathsArray.push(sourceModel.get(j).filePath)
+                                    gifAlbumsArray.push(sourceModel.get(j).album)
+                                }
+                            }
+                            bannerGifFromAlbum.notify( gifPathsArray, decideGifAlbum(gifAlbumsArray) )
                         }
                     }
                     MenuItem {

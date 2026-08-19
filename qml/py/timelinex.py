@@ -98,6 +98,62 @@ def bool_canSaveWithIPTC( filePath ):
     return saveWithIPTC, iptc_info
 
 
+def createAnimatedGif ( gifPathList, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ):
+    # canvas is the largest frame, smaller frames get scaled up to fit and centered - the source images are only ever read
+    try:
+        # resolve the chosen scan folder the same way scanForImages does
+        if "$HOME" in targetStorageMedia:
+            targetPath = str(Path.home()) + targetFolder + "/" + gifFileName
+        else:
+            targetPath = str((glob.glob("/run/media/*/*"))[int(targetStorageMedia)-1]) + targetFolder + "/" + gifFileName
+
+        canvasWidth = 0
+        canvasHeight = 0
+        for filePath in gifPathList:
+            img = Image.open(filePath)
+            img = ImageOps.exif_transpose(img)
+            if img.size[0] > canvasWidth:
+                canvasWidth = img.size[0]
+            if img.size[1] > canvasHeight:
+                canvasHeight = img.size[1]
+            img.close()
+
+        # never overwrite an existing file
+        dotIndex = targetPath.rfind(".")
+        basePath = targetPath[:dotIndex]
+        extension = targetPath[dotIndex:]
+        copyNumber = 2
+        while os.path.exists(targetPath):
+            targetPath = basePath + str(copyNumber) + extension
+            copyNumber += 1
+
+        def buildGifFrame ( filePath ):
+            img = Image.open(filePath)
+            img = ImageOps.exif_transpose(img)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            scaleFactor = min(canvasWidth / img.size[0], canvasHeight / img.size[1])
+            scaledImg = img.resize( (int(img.size[0] * scaleFactor), int(img.size[1] * scaleFactor)), Image.LANCZOS )
+            frame = Image.new('RGB', (canvasWidth, canvasHeight), (0, 0, 0))
+            frame.paste( scaledImg, ( (canvasWidth - scaledImg.size[0]) // 2, (canvasHeight - scaledImg.size[1]) // 2 ) )
+            img.close()
+            return frame
+
+        # a generator keeps only one frame in memory at a time
+        def remainingGifFrames():
+            for frameNumber in range(1, len(gifPathList)):
+                pyotherside.send('scanProgress', frameNumber + 1, len(gifPathList))
+                yield buildGifFrame(gifPathList[frameNumber])
+
+        pyotherside.send('scanProgress', 1, len(gifPathList))
+        firstFrame = buildGifFrame(gifPathList[0])
+        firstFrame.save(targetPath, save_all=True, append_images=remainingGifFrames(), duration=int(frameDurationMS), loop=0)
+        firstFrame.close()
+        pyotherside.send('gifCreated', targetPath)
+    except: # anything failed -> QML shows nothing new, no source image was written to either way
+        pyotherside.send('gifCreated', "")
+
+
 def buildEditedCopyPath ( filePath ):
     dotIndex = filePath.rfind(".")
     copyPath = filePath[:dotIndex] + "_edited" + filePath[dotIndex:]

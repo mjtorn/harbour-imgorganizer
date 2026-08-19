@@ -41,6 +41,18 @@ Page {
     property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
     property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
     property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
+    property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
+    property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
+
+    Connections {
+        // a counter avoids resetting the source inside its own change handler, which is a binding loop
+        target: idApplicationWindow
+        onNotificationTapCounterChanged: {
+            if (lastNotifiedImagePath !== "") {
+                showImageInTimeline( lastNotifiedImagePath )
+            }
+        }
+    }
     property string timelineSortDirection : "0" // mirrors infoTimeLineDirectionIndex, "0" = newest first
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
@@ -138,6 +150,9 @@ Page {
     BannerResize {
         id: bannerResize
     }
+    BannerGif {
+        id: bannerGif
+    }
     ListModel {
         id: idListModelImages
     }
@@ -199,8 +214,16 @@ Page {
     }
     Notification {
         id: idNotificationEditSaved
-        isTransient: true
+        isTransient: true // the gif-created publish flips this off so its notification stays tappable in the events view
         urgency: Notification.Low
+        // tapping the notification is a dbus remote action, the call lands in the DBusAdaptor in harbour-timeline.qml
+        remoteActions: [ {
+            "name": "default",
+            "service": "harbour.timeline",
+            "path": "/harbour/timeline",
+            "iface": "harbour.timeline",
+            "method": "openNotifiedImage"
+        } ]
     }
     ListModel {
         id: idListModelDuplicates
@@ -325,6 +348,9 @@ Page {
                     }
                 }
 
+                // duplicates results survive the rescan, drop vanished files and refresh the stored positions first
+                remapBaseIndexes()
+
                 // re-count items still left, search results should be kept
                 countDistinctAlbums()
                 countDistinctFolders()
@@ -339,6 +365,13 @@ Page {
                 dbFavouritesArray = []
                 dbPathAlbumsArray = []
                 finishedLoading = true //done creating list models
+
+                // a notification tap may have arrived while this scan was still running
+                if (pendingTimelineJumpPath !== "") {
+                    var retryJumpPath = pendingTimelineJumpPath
+                    pendingTimelineJumpPath = ""
+                    showImageInTimeline( retryJumpPath )
+                }
             });
             setHandler('goToDateIndex', function( targetListIndex ) {
                 idListViewTimeline.positionViewAtIndex( targetListIndex, ListView.Center)
@@ -441,16 +474,52 @@ Page {
                                 "isSearchResult" : false,
                                 "timestampSource" : imageItem.timestampSource,
                                 "isFavourite" : imageItem.isFavourite,
-                                "listModelImages_baseIndex" : baseIndex
+                                "listModelImages_baseIndex" : baseIndex,
+                                "duplicateGroup" : g
                             })
                         }
                     }
                 }
+                dropLonelyDuplicateGroups() // a member may not be in the main list at all
                 countDistinctAlbums()
                 finishedLoading = true
             });
+            setHandler('gifCreated', function(gifPath) {
+                if (gifPath === "") { // failed, nothing was created and no source image was touched
+                    finishedLoading = true
+                    lastNotifiedImagePath = ""
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = qsTr("GIF creation failed")
+                    idNotificationEditSaved.previewBody = ""
+                    idNotificationEditSaved.publish()
+                }
+                else {
+                    if (pendingGifAlbum !== "") {
+                        storageItem.addAlbum(gifPath, pendingGifAlbum)
+                    }
+                    pendingGifAlbum = ""
+                    lastNotifiedImagePath = gifPath
+                    idNotificationEditSaved.isTransient = false // stays in the events view, tapping it jumps to the gif
+                    idNotificationEditSaved.urgency = Notification.Normal // low urgency would not show a banner for a non-transient notification
+                    idNotificationEditSaved.summary = qsTr("GIF created")
+                    idNotificationEditSaved.body = gifPath.split("/").pop()
+                    idNotificationEditSaved.previewSummary = qsTr("GIF created")
+                    idNotificationEditSaved.previewBody = gifPath.split("/").pop()
+                    idNotificationEditSaved.publish()
+                    clearAllLists()
+                    py.scanForImages()
+                }
+            });
             setHandler('editedImageSaved', function(copyPath) {
                 lastEditedImagePath = copyPath
+                lastNotifiedImagePath = ""
+                idNotificationEditSaved.isTransient = true
+                idNotificationEditSaved.urgency = Notification.Low
+                idNotificationEditSaved.summary = ""
+                idNotificationEditSaved.body = ""
                 idNotificationEditSaved.previewSummary = qsTr("Saved as new copy")
                 idNotificationEditSaved.previewBody = copyPath.split("/").pop()
                 idNotificationEditSaved.publish()
@@ -577,6 +646,9 @@ Page {
         }
         function findDuplicateImages( allPathsArray, tolerance ) {
             call("timelinex.findDuplicateImages", [ allPathsArray, tolerance ])
+        }
+        function createAnimatedGif( gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ) {
+            call("timelinex.createAnimatedGif", [ gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ])
         }
         function renameOriginalFunction( currentPath ) {
             //var currentPath = "/" + origImageFilePath.replace(/^(file:\/{3})|(qrc:\/{2})|(http:\/{2})/,"")
@@ -880,6 +952,23 @@ Page {
                                 }
                                 shareAction.resources = sharePathsArray
                                 shareAction.trigger()
+                            }
+                        }
+                        MenuItem {
+                            enabled: pillowAvailable && multiSelectActive && timelineSelectedTotal > 1
+                            visible: enabled
+                            text: qsTr("Create animated gif")
+                            onClicked: {
+                                var gifPathsArray = []
+                                var gifAlbumsArray = []
+                                var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                for (var j = 0; j < activeTimelineModel.count; j++) {
+                                    if (activeTimelineModel.get(j).selected === true) {
+                                        gifPathsArray.push(activeTimelineModel.get(j).filePath)
+                                        gifAlbumsArray.push(activeTimelineModel.get(j).album)
+                                    }
+                                }
+                                bannerGif.notify( gifPathsArray, decideGifAlbum(gifAlbumsArray) )
                             }
                         }
                         MenuItem {
@@ -1583,7 +1672,7 @@ Page {
         idListModelSearch.clear()
         idListModelFavourites.clear()
         idListModelTimelineFiltered.clear()
-        idListModelDuplicates.clear()
+        // idListModelDuplicates is kept: the results are not derivable from a rescan, stale rows get pruned and re-mapped afterwards
         timelineAlbumFilter = ""
     }
 
@@ -2020,6 +2109,27 @@ Page {
         }
     }
 
+    function dropLonelyDuplicateGroups() {
+        // a group whose partners got deleted, renamed away or dropped out of the scan must not
+        // linger as a single image - being alone in DUPLICATES means nothing was duplicated
+        var membersPerGroup = ({})
+        for (var i = 0; i < idListModelDuplicates.count; i++) {
+            var groupNumber = idListModelDuplicates.get(i).duplicateGroup
+            membersPerGroup[groupNumber] = (membersPerGroup[groupNumber] === undefined) ? 1 : membersPerGroup[groupNumber] + 1
+        }
+        var droppedAny = false
+        for (i = idListModelDuplicates.count -1; i >= 0; --i) {
+            if (membersPerGroup[idListModelDuplicates.get(i).duplicateGroup] < 2) {
+                idListModelDuplicates.remove(i)
+                droppedAny = true
+            }
+        }
+        // the survivor was not deleted, so nothing else would take its copy out of an open duplicates page
+        if (droppedAny === true && currentAlbum === standardDuplicatesAlbum) {
+            getImagesInAlbum( standardDuplicatesAlbum )
+        }
+    }
+
     function remapBaseIndexes() {
         // re-map the stored positions into idListModelImages after its rows shifted
         var pathIndexMap = ({})
@@ -2030,17 +2140,31 @@ Page {
             idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
         }
         for (l = 0; l < idListModelTimelineFiltered.count; l++) {
-            idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
+            if (pathIndexMap[idListModelTimelineFiltered.get(l).filePath] !== undefined) {
+                idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
+            }
         }
-        for (l = 0; l < idListModelDuplicates.count; l++) {
-            idListModelDuplicates.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelDuplicates.get(l).filePath])
+        // the duplicates results outlive rescans, rows of vanished files get dropped here
+        for (l = idListModelDuplicates.count -1; l >= 0; --l) {
+            if (pathIndexMap[idListModelDuplicates.get(l).filePath] === undefined) {
+                idListModelDuplicates.remove(l)
+            }
+            else {
+                idListModelDuplicates.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelDuplicates.get(l).filePath])
+            }
         }
         for (var k = 0; k < idListModelImagesAlbum.count; k++) {
-            idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+            if (pathIndexMap[idListModelImagesAlbum.get(k).filePath] !== undefined) {
+                idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+            }
         }
         for (var o = 0; o < idListModelImagesFolder.count; o++) {
-            idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+            if (pathIndexMap[idListModelImagesFolder.get(o).filePath] !== undefined) {
+                idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+            }
         }
+
+        dropLonelyDuplicateGroups() // pruning above may have left a group with a single member
     }
 
     function runDuplicateSearch() {
@@ -2057,6 +2181,59 @@ Page {
     onTrackedDuplicateToleranceChanged: {
         if (idListModelDuplicates.count > 0) {
             runDuplicateSearch()
+        }
+    }
+
+    function decideGifAlbum( albumsArray ) {
+        // all frames in one album -> the gif joins it, UNSORTED entries do not break the deal
+        var targetAlbum = ""
+        for (var i = 0; i < albumsArray.length; i++) {
+            if (albumsArray[i] !== standardAlbum) {
+                if (targetAlbum === "") {
+                    targetAlbum = albumsArray[i]
+                }
+                else if (targetAlbum !== albumsArray[i]) {
+                    return ""
+                }
+            }
+        }
+        return targetAlbum
+    }
+
+    function showImageInTimeline( targetPath ) {
+        // jump to the full timeline and center the image, eg. after tapping the gif-created notification.
+        // the timeline lives on this page - a pushed album/folder/viewer page would hide the jump completely
+        var popGuard = 0
+        while (pageStack.depth > 1 && popGuard < 10) {
+            pageStack.pop(undefined, PageStackAction.Immediate)
+            popGuard += 1
+        }
+        currentView = "timeline"
+        storageItem.setSetting("infoCurrentView", "timeline")
+        timelineAlbumFilter = ""
+        idListModelTimelineFiltered.clear()
+        var foundIndex = -1
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === targetPath) {
+                foundIndex = i
+            }
+        }
+        if (foundIndex >= 0) {
+            pendingTimelineJumpPath = ""
+            idListViewTimeline.positionViewAtIndex( foundIndex, ListView.Center ) // the viewer pops back onto the right spot
+            // and open the image itself, exactly like tapping it in the timeline
+            var allCurrentModelImagePathsArray = []
+            for (i = 0; i < idListModelImages.count; i++) {
+                allCurrentModelImagePathsArray.push(idListModelImages.get(i).filePath)
+            }
+            pageStack.animatorPush(viewPage, {
+                                       upperFreeHeight : upperFreeHeight,
+                                       allCurrentModelImagePathsArray : allCurrentModelImagePathsArray,
+                                       currentImageIndex : foundIndex,
+                                   })
+        }
+        else {
+            pendingTimelineJumpPath = targetPath // probably still being scanned in, retried when the scan lands
         }
     }
 

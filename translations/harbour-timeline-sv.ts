@@ -43,6 +43,10 @@
         <translation>Visa alla</translation>
     </message>
     <message>
+        <source>Create animated gif</source>
+        <translation>Skapa animerad GIF</translation>
+    </message>
+    <message>
         <source>Info</source>
         <translation>Info</translation>
     </message>
@@ -108,6 +112,17 @@
     <message>
         <source>DIN-landscape</source>
         <translation>DIN liggande</translation>
+    </message>
+</context>
+<context>
+    <name>BannerGif</name>
+    <message>
+        <source>file name</source>
+        <translation>Filnamn</translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation>ms</translation>
     </message>
 </context>
 <context>
@@ -178,6 +193,18 @@
     <message>
         <source>Saved as new copy</source>
         <translation>Sparad som ny kopia</translation>
+    </message>
+    <message>
+        <source>GIF created</source>
+        <translation>GIF skapad</translation>
+    </message>
+    <message>
+        <source>GIF creation failed</source>
+        <translation>GIF-skapandet misslyckades</translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation>Skapa animerad GIF</translation>
     </message>
     <message>
         <source>Find duplicates</source>

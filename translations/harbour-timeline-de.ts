@@ -43,6 +43,10 @@
         <translation>Alle anzeigen</translation>
     </message>
     <message>
+        <source>Create animated gif</source>
+        <translation>Animiertes GIF erstellen</translation>
+    </message>
+    <message>
         <source>Unselect</source>
         <translation>Abwählen</translation>
     </message>
@@ -108,6 +112,17 @@
     <message>
         <source>DIN-portrait</source>
         <translation>DIN-hoch</translation>
+    </message>
+</context>
+<context>
+    <name>BannerGif</name>
+    <message>
+        <source>file name</source>
+        <translation>Dateiname</translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation>ms</translation>
     </message>
 </context>
 <context>
@@ -234,6 +249,18 @@
     <message>
         <source>Saved as new copy</source>
         <translation>Als neue Kopie gespeichert</translation>
+    </message>
+    <message>
+        <source>GIF created</source>
+        <translation>GIF erstellt</translation>
+    </message>
+    <message>
+        <source>GIF creation failed</source>
+        <translation>GIF-Erstellung fehlgeschlagen</translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation>Animiertes GIF erstellen</translation>
     </message>
     <message>
         <source>Find duplicates</source>
