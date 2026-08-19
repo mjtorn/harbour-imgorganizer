@@ -237,6 +237,15 @@ Page {
                         }
                     }
 
+                    AnimatedImage {
+                        // Image only ever shows the first frame of a gif, this overlay plays the animation on top of it
+                        anchors.fill: parent
+                        visible: (currentImagePath !== undefined) && (currentImagePath.toString().toLowerCase().slice(-4) === ".gif") && (idImageView.status === Image.Ready)
+                        playing: visible
+                        fillMode: Image.PreserveAspectFit
+                        source: visible ? idImageView.source : ""
+                        cache: false
+                    }
                     MouseArea {
                         id: idMouseAreaFlick
                         enabled: flickScale !== 1 && idImageView.status !== Image.Loading
