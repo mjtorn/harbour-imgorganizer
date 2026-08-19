@@ -39,6 +39,10 @@
         <translation>Nach Album filtern</translation>
     </message>
     <message>
+        <source>Stop selecting</source>
+        <translation>Auswahl beenden</translation>
+    </message>
+    <message>
         <source>Refresh duplicates</source>
         <translation>Duplikate aktualisieren</translation>
     </message>
@@ -253,6 +257,10 @@
     <message>
         <source>Saved as new copy</source>
         <translation>Als neue Kopie gespeichert</translation>
+    </message>
+    <message>
+        <source>Stop selecting</source>
+        <translation>Auswahl beenden</translation>
     </message>
     <message>
         <source>GIF created</source>

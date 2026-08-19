@@ -39,6 +39,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Stop selecting</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Refresh duplicates</source>
         <translation type="unfinished"></translation>
     </message>
@@ -200,6 +204,10 @@
     </message>
     <message>
         <source>Saved as new copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stop selecting</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

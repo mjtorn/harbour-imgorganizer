@@ -878,8 +878,9 @@ Page {
 
                 menu: Component {
                     ContextMenu {
-                        hasContent: (multiSelectActive !== true) || (multiSelectActive === true && timelineSelectedTotal !== 0)
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Set Album")
                             onClicked: {
                                 var chosenFilesArray = []
@@ -904,6 +905,8 @@ Page {
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: (isFavourite !== "true") ? qsTr("Set Favourite") : qsTr("From Favourite")
                             onClicked: {
                                 // only use isFavourite info from the item currently touched
@@ -943,6 +946,8 @@ Page {
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Share")
                             ShareAction {
                                 id: shareAction
@@ -983,6 +988,8 @@ Page {
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Delete")
                             onClicked: {
                                 var chosenFilesArray = []
@@ -1010,6 +1017,20 @@ Page {
                                 var imageWidth = idImageSizeHelper.sourceSize.width
                                 var imageHeight = idImageSizeHelper.sourceSize.height
                                 py.getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite )
+                            }
+                        }
+                        MenuItem {
+                            text: (multiSelectActive === true) ? qsTr("Stop selecting") : qsTr("Selection")
+                            onClicked: {
+                                if (multiSelectActive === true) {
+                                    unselectAll()
+                                }
+                                else {
+                                    // start selecting right here, with the long-tapped image already selected
+                                    multiSelectActive = true
+                                    selected = true
+                                    timelineSelectedTotal = timelineSelectedTotal + 1
+                                }
                             }
                         }
                     }

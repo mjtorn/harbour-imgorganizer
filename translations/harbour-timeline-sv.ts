@@ -39,6 +39,10 @@
         <translation>Filtrera efter album</translation>
     </message>
     <message>
+        <source>Stop selecting</source>
+        <translation>Sluta markera</translation>
+    </message>
+    <message>
         <source>Refresh duplicates</source>
         <translation>Uppdatera dubbletter</translation>
     </message>
@@ -197,6 +201,10 @@
     <message>
         <source>Saved as new copy</source>
         <translation>Sparad som ny kopia</translation>
+    </message>
+    <message>
+        <source>Stop selecting</source>
+        <translation>Sluta markera</translation>
     </message>
     <message>
         <source>GIF created</source>

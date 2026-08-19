@@ -178,8 +178,9 @@ Page {
 
             menu: Component {
                 ContextMenu {
-                    hasContent: (multiSelectActive !== true) || (multiSelectActive === true && counterSelectedTotal !== 0)
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: qsTr("Set Album")
                         onClicked: {
                             var chosenFilesArray = []
@@ -247,6 +248,8 @@ Page {
                         }
                     }
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: (isFavourite !== "true") ? qsTr("Set Favourite") : qsTr("From Favourite")
                         onClicked: {
                             // only use isFavourite info from the item currently touched
@@ -378,6 +381,8 @@ Page {
                         onClicked: Qt.openUrlExternally(filePath)
                     }
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: (multiSelectActive === false) ? qsTr("Share") : qsTr("Share as ZIP")
                         ShareAction {
                             id: shareAction
@@ -411,7 +416,7 @@ Page {
                         }
                     }
                     MenuItem {
-                        enabled: pillowAvailable && multiSelectActive
+                        enabled: pillowAvailable && multiSelectActive && counterSelectedTotal > 0
                         visible: enabled
                         text: qsTr("Resize")
                         onClicked: {
@@ -451,6 +456,8 @@ Page {
                         }
                     }
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: qsTr("Delete")
                         onClicked: {
                             var chosenFilesArray = []
@@ -486,6 +493,21 @@ Page {
                             var imageWidth = idImageSizeHelper.sourceSize.width
                             var imageHeight = idImageSizeHelper.sourceSize.height
                             py.getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite )
+                        }
+                    }
+                    MenuItem {
+                        text: (multiSelectActive === true) ? qsTr("Stop selecting") : qsTr("Selection")
+                        onClicked: {
+                            if (multiSelectActive === true) {
+                                multiSelectActive = false
+                                unselectAll()
+                            }
+                            else {
+                                // start selecting right here, with the long-tapped image already selected
+                                multiSelectActive = true
+                                selected = true
+                                counterSelectedTotal = counterSelectedTotal + 1
+                            }
                         }
                     }
                 }
