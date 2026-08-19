@@ -40,6 +40,7 @@ Page {
     property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
     property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
     property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
+    property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
     property string timelineSortDirection : "0" // mirrors infoTimeLineDirectionIndex, "0" = newest first
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
@@ -203,6 +204,9 @@ Page {
     }
     ListModel {
         id: idListModelDuplicates
+    }
+    ListModel {
+        id: idListModelAlbumTree
     }
     ShareAction {
         id: shareActionZip
@@ -1043,12 +1047,18 @@ Page {
                 size: BusyIndicatorSize.Large
             }
 
-            model: idListModelAlbums
+            model: idListModelAlbumTree
             delegate: GridItem {
+                enabled: is_filler === false
                 contentWidth: minimumTimelineListItemHeight - Theme.paddingSmall
                 contentHeight: contentWidth
                 contentX: Theme.paddingSmall / 2
                 onClicked: {
+                    // a group square expands or collapses its sub-albums instead of opening
+                    if (is_group === true) {
+                        toggleAlbumGroup( album_name )
+                        return
+                    }
                     if (album_name !== standardSearchAlbum) {
                         var showSearchText = ""
                     }
@@ -1078,6 +1088,7 @@ Page {
 
                 menu: Component {
                     ContextMenu {
+                        hasContent: (is_group === false) && (is_filler === false) // group squares only expand and collapse, fillers do nothing
                         onActiveChanged: { // bugfix: stop idCoverImageChangeTimer, otherwise it closes when image changes
                             if (active) { // when menu opened
                                 idCoverImageChangeTimer.stop()
@@ -1119,6 +1130,7 @@ Page {
                 }
 
                 Rectangle {
+                    visible: is_filler === false // filler squares stay empty
                     anchors.fill: parent
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: (album_name !== standardSearchAlbum && album_name !== standardAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum) ? (Theme.rgba(Theme.primaryColor, 0.15)) : (Theme.secondaryHighlightColor) }
@@ -1161,7 +1173,7 @@ Page {
                     }
                 }
                 Label {
-                    visible: !idCoverAlbum.visible
+                    visible: !idCoverAlbum.visible && is_filler === false
                     anchors.fill: parent
                     anchors.bottomMargin: 0
                     horizontalAlignment: Text.AlignHCenter
@@ -1171,16 +1183,14 @@ Page {
                     text: album_count
                 }
                 Label {
-                    visible: !idCoverAlbum.visible
+                    visible: !idCoverAlbum.visible && is_filler === false
                     width: parent.width
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: infoWidthDevider === 2 ? (parent.height/6) : (infoWidthDevider === 3 ? parent.height/7 : parent.height/12)
                     truncationMode: TruncationMode.Elide
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: infoWidthDevider === 2 ? Theme.fontSizeSmall : Theme.fontSizeExtraSmall
-                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum || album_name === standardDuplicatesAlbum))
-                          ? (album_name.substring(1))
-                          : (album_name)
+                    text: display_name
                 }
                 Label {
                     visible: album_name === standardSearchAlbum && !idCoverAlbum.visible
@@ -1200,9 +1210,7 @@ Page {
                     truncationMode: TruncationMode.Elide
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: infoWidthDevider === 2 ? Theme.fontSizeMedium : Theme.fontSizeExtraSmall
-                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum || album_name === standardDuplicatesAlbum))
-                          ? ( (album_name.substring(1)) + " - " + album_count )
-                          : ( album_name + " - " + album_count )
+                    text: display_name + " - " + album_count
                     Rectangle {
                         z: -1
                         visible: idCoverAlbum.visible
@@ -1651,6 +1659,108 @@ Page {
             previousRandomImagesAlbumArray[j] = randomFilePath
         }
         //console.log(previousRandomImagesAlbumArray)
+
+        buildAlbumTree()
+    }
+
+    function toggleAlbumGroup( groupPrefix ) {
+        if (expandedAlbumPrefixes[groupPrefix] === true) {
+            delete expandedAlbumPrefixes[groupPrefix]
+        }
+        else {
+            expandedAlbumPrefixes[groupPrefix] = true
+        }
+        buildAlbumTree()
+    }
+
+    function buildAlbumTree() {
+        // coalesce the flat album list into a tree by the "Foo / Bar / Baz" naming convention:
+        // one square per first component with the aggregated count, expanding on tap into its sub-albums
+        var nodeByPrefix = ({})
+        var prefixList = []
+        for (var i = 0; i < idListModelAlbums.count; i++) {
+            var fullName = idListModelAlbums.get(i).album_name
+            var isSpecialAlbum = (fullName === standardAlbum || fullName === standardSearchAlbum || fullName === standardFavouritesAlbum || fullName === standardDuplicatesAlbum)
+            var nameParts = isSpecialAlbum ? [fullName] : fullName.split(" / ")
+            var prefix = ""
+            for (var p = 0; p < nameParts.length; p++) {
+                var parentPrefix = prefix
+                prefix = (p === 0) ? nameParts[p] : prefix + " / " + nameParts[p]
+                if (nodeByPrefix[prefix] === undefined) {
+                    nodeByPrefix[prefix] = { "displayName" : (isSpecialAlbum ? nameParts[p].substring(1) : nameParts[p]), "parentPrefix" : parentPrefix, "depth" : p,
+                                             "count" : 0, "image" : "", "ownCount" : 0, "ownImage" : "", "previousImage" : "", "isAlbum" : false, "hasChildren" : false }
+                    prefixList.push(prefix)
+                }
+                nodeByPrefix[prefix].count += idListModelAlbums.get(i).album_count
+                if (nodeByPrefix[prefix].image === "") { nodeByPrefix[prefix].image = idListModelAlbums.get(i).random_image }
+                if (p === nameParts.length - 1) {
+                    nodeByPrefix[prefix].isAlbum = true
+                    nodeByPrefix[prefix].ownCount = idListModelAlbums.get(i).album_count
+                    nodeByPrefix[prefix].ownImage = idListModelAlbums.get(i).random_image
+                    nodeByPrefix[prefix].previousImage = idListModelAlbums.get(i).previous_image
+                }
+                else {
+                    nodeByPrefix[prefix].hasChildren = true
+                }
+            }
+        }
+
+        prefixList.sort() // keeps children right after their group since " " sorts before any letter
+        idListModelAlbumTree.clear()
+        var columnsPerRow = Math.max(1, Math.floor(idGridViewAlbums.width / idGridViewAlbums.cellWidth))
+        var lastEmittedDepth = -1
+        for (i = 0; i < prefixList.length; i++) {
+            var node = nodeByPrefix[prefixList[i]]
+
+            // a row is visible only while every ancestor group is expanded
+            var visibleRow = true
+            var ancestorPrefix = node.parentPrefix
+            while (ancestorPrefix !== "") {
+                if (expandedAlbumPrefixes[ancestorPrefix] !== true) { visibleRow = false }
+                ancestorPrefix = nodeByPrefix[ancestorPrefix].parentPrefix
+            }
+
+            if (visibleRow === true) {
+                // every change of tree depth starts a fresh grid row, sub-albums always sit on their own rows
+                if (lastEmittedDepth !== -1 && node.depth !== lastEmittedDepth) {
+                    padAlbumTreeRow(columnsPerRow)
+                }
+                var expandMarker = (node.hasChildren === true) ? ((expandedAlbumPrefixes[prefixList[i]] === true) ? "▼ " : "▶ ") : ""
+                idListModelAlbumTree.append({ "album_name" : prefixList[i],
+                                              "display_name" : expandMarker + ((node.depth === 0) ? node.displayName : prefixList[i]),
+                                              "album_count" : node.count,
+                                              "random_image" : node.image,
+                                              "previous_image" : (node.hasChildren === true) ? "" : node.previousImage,
+                                              "is_group" : node.hasChildren,
+                                              "depth" : node.depth,
+                                              "is_filler" : false
+                                            })
+                lastEmittedDepth = node.depth
+                // an album that also has sub-albums gets an own leaf row when expanded, holding just its own images
+                if (node.hasChildren === true && node.isAlbum === true && expandedAlbumPrefixes[prefixList[i]] === true) {
+                    padAlbumTreeRow(columnsPerRow)
+                    idListModelAlbumTree.append({ "album_name" : prefixList[i],
+                                                  "display_name" : prefixList[i],
+                                                  "album_count" : node.ownCount,
+                                                  "random_image" : node.ownImage,
+                                                  "previous_image" : node.previousImage,
+                                                  "is_group" : false,
+                                                  "depth" : node.depth + 1,
+                                                  "is_filler" : false
+                                                })
+                    lastEmittedDepth = node.depth + 1
+                }
+            }
+        }
+    }
+
+    function padAlbumTreeRow( columnsPerRow ) {
+        // textless disabled squares filling the rest of a grid row
+        while (idListModelAlbumTree.count % columnsPerRow !== 0) {
+            idListModelAlbumTree.append({ "album_name" : "", "display_name" : "", "album_count" : 0,
+                                          "random_image" : "", "previous_image" : "", "is_group" : false,
+                                          "depth" : 0, "is_filler" : true })
+        }
     }
 
     function countDistinctFolders() {
