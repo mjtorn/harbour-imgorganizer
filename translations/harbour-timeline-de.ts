@@ -131,8 +131,8 @@
 <context>
     <name>BannerToAlbum</name>
     <message>
-        <source>new album</source>
-        <translation>Neues Album</translation>
+        <source>New album, Category / Album creates a sub-album</source>
+        <translation>Neues Album, Kategorie / Album erzeugt ein Unteralbum</translation>
     </message>
     <message>
         <source>new</source>

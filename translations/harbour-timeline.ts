@@ -135,7 +135,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>new album</source>
+        <source>New album, Category / Album creates a sub-album</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

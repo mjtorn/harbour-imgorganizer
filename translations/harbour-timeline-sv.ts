@@ -135,8 +135,8 @@
         <translation>Nytt</translation>
     </message>
     <message>
-        <source>new album</source>
-        <translation>Nytt album</translation>
+        <source>New album, Category / Album creates a sub-album</source>
+        <translation>Nytt album, Kategori / Album skapar ett underalbum</translation>
     </message>
 </context>
 <context>

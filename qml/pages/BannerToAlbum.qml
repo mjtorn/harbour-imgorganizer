@@ -152,7 +152,7 @@ MouseArea {
                         color: Theme.highlightColor
                         inputMethodHints: Qt.ImhNoPredictiveText
                         //validator: RegExpValidator { regExp: /[a-zA-Z0-9äöüÄÖÜ_=()\/.!?#+-]*$/ }
-                        placeholderText: qsTr("new album")
+                        placeholderText: qsTr("New album, Category / Album creates a sub-album")
                         EnterKey.onClicked: {
                             if (text.length > 0) {
                                 idListModelAlbums.append({"album_name" : text })
