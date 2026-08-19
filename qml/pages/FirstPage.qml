@@ -1088,7 +1088,7 @@ Page {
 
                 menu: Component {
                     ContextMenu {
-                        hasContent: (is_group === false) && (is_filler === false) // group squares only expand and collapse, fillers do nothing
+                        hasContent: is_filler === false // groups offer Rename, fillers do nothing
                         onActiveChanged: { // bugfix: stop idCoverImageChangeTimer, otherwise it closes when image changes
                             if (active) { // when menu opened
                                 idCoverImageChangeTimer.stop()
@@ -1100,27 +1100,29 @@ Page {
                         MenuItem {
                             visible: (album_name !== standardAlbum && album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum )
                             text: qsTr("Rename")
-                            onClicked: bannerRename.notify( Theme.highlightDimmerColor, album_name )
+                            onClicked: bannerRename.notify( Theme.highlightDimmerColor, album_name, is_group ) // renaming a group re-prefixes its whole subtree
                         }
                         MenuItem {
-                            visible: (album_name !== standardAlbum)
+                            visible: (album_name !== standardAlbum) && (is_group === false)
                             text: qsTr("Clear")
                             onClicked: clear ( album_name, album_count )
                         }
                         MenuItem {
+                            visible: is_group === false
                             text: qsTr("Share as ZIP")
                             onClicked: {
                                 getAllPathsInAlbumOrFolder("albums", album_name, "createZip")
                             }
                         }
                         MenuItem {
-                            visible: pillowAvailable
+                            visible: pillowAvailable && (is_group === false)
                             text: qsTr("Resize")
                             onClicked: {
                                 getAllPathsInAlbumOrFolder("albums", album_name, "bulkResize")
                             }
                         }
                         MenuItem {
+                            visible: is_group === false
                             text: qsTr("Delete")
                             onClicked: {
                                 deleteTheseFiles ("albums", album_name, "deleteFiles")
