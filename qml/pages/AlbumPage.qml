@@ -87,6 +87,16 @@ Page {
             highlightColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
             backgroundColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
             MenuItem {
+                visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum)
+                text: qsTr("Refresh duplicates")
+                onClicked: {
+                    // rescan first so freshly arrived images are known, the duplicate search chains after it
+                    pendingDuplicateSearch = true
+                    clearAllLists()
+                    py.scanForImages()
+                }
+            }
+            MenuItem {
                 text: (multiSelectActive === true) ? qsTr("Unselect") : qsTr("Selection")
                 onClicked: {
                     if (multiSelectActive === true) {

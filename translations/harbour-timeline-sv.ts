@@ -39,6 +39,10 @@
         <translation>Filtrera efter album</translation>
     </message>
     <message>
+        <source>Refresh duplicates</source>
+        <translation>Uppdatera dubbletter</translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation>Visa alla</translation>
     </message>

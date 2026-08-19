@@ -39,6 +39,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Refresh duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation type="unfinished"></translation>
     </message>

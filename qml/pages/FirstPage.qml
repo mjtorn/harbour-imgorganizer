@@ -43,6 +43,7 @@ Page {
     property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
     property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
     property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
+    property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
 
     Connections {
         // a counter avoids resetting the source inside its own change handler, which is a binding loop
@@ -372,6 +373,12 @@ Page {
                     pendingTimelineJumpPath = ""
                     showImageInTimeline( retryJumpPath )
                 }
+
+                // "Refresh duplicates" wants the duplicate search run against the fresh scan
+                if (pendingDuplicateSearch === true) {
+                    pendingDuplicateSearch = false
+                    runDuplicateSearch()
+                }
             });
             setHandler('goToDateIndex', function( targetListIndex ) {
                 idListViewTimeline.positionViewAtIndex( targetListIndex, ListView.Center)
@@ -482,6 +489,10 @@ Page {
                 }
                 dropLonelyDuplicateGroups() // a member may not be in the main list at all
                 countDistinctAlbums()
+                // an open DUPLICATES album page shows idListModelImagesAlbum, re-fill it with the fresh results
+                if (currentAlbum === standardDuplicatesAlbum) {
+                    getImagesInAlbum( standardDuplicatesAlbum )
+                }
                 finishedLoading = true
             });
             setHandler('gifCreated', function(gifPath) {

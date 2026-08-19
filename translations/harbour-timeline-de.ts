@@ -39,6 +39,10 @@
         <translation>Nach Album filtern</translation>
     </message>
     <message>
+        <source>Refresh duplicates</source>
+        <translation>Duplikate aktualisieren</translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation>Alle anzeigen</translation>
     </message>
