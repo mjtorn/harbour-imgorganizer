@@ -1117,6 +1117,14 @@ Page {
                 enabled: finishedLoading === true
 
                 MenuItem {
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, same as the timeline and folder views offer
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
+                MenuItem {
                     text: qsTr("Find duplicates")
                     onClicked: {
                         runDuplicateSearch()
