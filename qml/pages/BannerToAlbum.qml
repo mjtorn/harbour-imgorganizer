@@ -294,6 +294,11 @@ MouseArea {
             }
         }
 
+        else if (triggeredFrom === "fromViewPage") {
+            // the viewer is reachable from every list, so sync the album role everywhere by path
+            setAlbumInAllModels( targetImagePath, targetAlbumName )
+        }
+
         else if (triggeredFrom === "fromAlbum") { // treats index as the index from albumList
             for (var j = 0; j < idListModelImages.count; j++) {
                 if (idListModelImages.get(j).filePath === targetImagePath) {

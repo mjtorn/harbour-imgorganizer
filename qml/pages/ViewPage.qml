@@ -54,6 +54,24 @@ Page {
         currentImageInfo = infoObject
     }
 
+    Connections {
+        // the album was just set from this viewer, a counter avoids resetting a watched value in its own handler
+        target: page
+        onAlbumAssignmentCounterChanged: {
+            refreshImageInfo() // the info overlay would otherwise keep showing the old album
+            if (albumAssignmentLeftTheView === true) {
+                idCloseAfterAlbumTimer.start() // deferred, the album banner is still finishing its click handler
+            }
+        }
+    }
+    Timer {
+        id: idCloseAfterAlbumTimer
+        interval: 1
+        onTriggered: {
+            pageStack.pop()
+        }
+    }
+
     property string trackedEditedImagePath : lastEditedImagePath // watchdog pattern: an edit saved a new copy, show it right away
     onTrackedEditedImagePathChanged: {
         if (trackedEditedImagePath !== "") {
@@ -151,6 +169,9 @@ Page {
     }
     BannerPaint {
         id: bannerPaint
+    }
+    BannerToAlbum {
+        id: bannerToAlbumFromView
     }
     NumberAnimation {
         id: animateLeftListEnd
@@ -333,7 +354,7 @@ Page {
         }
         Rectangle {
             id: idImageInfoOverlay
-            visible: showImageInfo && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: showImageInfo && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0)
             anchors.top: parent.top
             anchors.topMargin: upperFreeHeight
             width: parent.width
@@ -396,7 +417,7 @@ Page {
         IconButton {
             id: idButtonClose
             anchors.left: parent.left
-            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0)
             height: upperFreeHeight
             width: height
             icon.scale: 1
@@ -424,7 +445,7 @@ Page {
                 verticalCenter: isPortrait ? parent.top : parent.verticalCenter
                 verticalCenterOffset: isPortrait ? height/2 : 0
             }
-            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0)
             height: upperFreeHeight
             width: height
             //icon.scale: 1.9
@@ -458,12 +479,48 @@ Page {
             }
         }
         IconButton {
+            id: idButtonSetAlbum
+            anchors {
+                horizontalCenter: isPortrait ? parent.horizontalCenter : parent.left
+                horizontalCenterOffset: isPortrait ? parent.width/4 : width/2
+                verticalCenter: isPortrait ? parent.top : parent.verticalCenter
+                verticalCenterOffset: isPortrait ? height/2 : parent.height/4
+            }
+            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0)
+            height: upperFreeHeight
+            width: height
+            icon.scale: 1
+            icon.source: "image://theme/icon-m-folder?"
+            onClicked: {
+                stopSlideshow()
+                // the album assignment works on the position in the main list, whichever list opened the viewer
+                var baseIndex = -1
+                for (var i = 0; i < idListModelImages.count; i++) {
+                    if (idListModelImages.get(i).filePath === currentImagePath) {
+                        baseIndex = i
+                    }
+                }
+                if (baseIndex >= 0) {
+                    bannerToAlbumFromView.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [ [0, currentImagePath, baseIndex] ], "fromViewPage", "triggeredOnViewPage" )
+                }
+            }
+
+            Rectangle {
+                z: -1
+                anchors.centerIn: parent
+                width: parent.width / 3*2
+                height: width
+                radius: width/2
+                color: Theme.rgba(Theme.highlightDimmerColor, 0.5)
+            }
+        }
+        IconButton {
             id: idButtonEdit
             anchors.right: isPortrait ? parent.right : parent.left
             anchors.rightMargin: isPortrait ? 0 : -width
             anchors.top: isPortrait ? parent.top : parent.bottom
             anchors.topMargin: isPortrait ? 0 : -height
-            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0)
             height: upperFreeHeight
             width: height
             icon.scale: 1

@@ -42,6 +42,8 @@ Page {
     property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
     property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
     property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
+    property int albumAssignmentCounter : 0 // bumped after an album was set from the viewer, an open viewer reacts to the change
+    property bool albumAssignmentLeftTheView : false // the image left the album filter or the album page being browsed
     property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
     property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
 
@@ -2470,6 +2472,62 @@ Page {
         getImagesInFolder( currentFolder )
         currentFolderAlbumFilter = albumName
         applyFolderAlbumFilter()
+    }
+
+    function setAlbumInAllModels( targetPath, targetAlbumName ) {
+        // used when the album is set from the viewer, which can be reached from any of the lists
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === targetPath) {
+                idListModelImages.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelFavourites.count; i++) {
+            if (idListModelFavourites.get(i).filePath === targetPath) {
+                idListModelFavourites.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelSearch.count; i++) {
+            if (idListModelSearch.get(i).filePath === targetPath) {
+                idListModelSearch.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelImagesFolder.count; i++) {
+            if (idListModelImagesFolder.get(i).filePath === targetPath) {
+                idListModelImagesFolder.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelDuplicates.count; i++) {
+            if (idListModelDuplicates.get(i).filePath === targetPath) {
+                idListModelDuplicates.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelTimelineFiltered.count; i++) {
+            if (idListModelTimelineFiltered.get(i).filePath === targetPath) {
+                idListModelTimelineFiltered.setProperty(i, "album", targetAlbumName)
+            }
+        }
+
+        // an open album page holds one album only, the image leaves it when it moved elsewhere
+        var removedFromOpenAlbum = false
+        for (i = idListModelImagesAlbum.count -1; i >= 0; --i) {
+            if (idListModelImagesAlbum.get(i).filePath === targetPath) {
+                idListModelImagesAlbum.setProperty(i, "album", targetAlbumName)
+                if ((currentAlbum !== standardFavouritesAlbum) && (currentAlbum !== standardSearchAlbum) && (currentAlbum !== standardDuplicatesAlbum) && (targetAlbumName !== currentAlbum)) {
+                    idListModelImagesAlbum.remove(i)
+                    removedFromOpenAlbum = true
+                }
+            }
+        }
+
+        // a filtered timeline or folder view may not match the new album any more
+        applyTimelineAlbumFilter()
+        applyFolderAlbumFilter()
+
+        // an open viewer refreshes its info overlay, and closes when the image just left what is being browsed
+        albumAssignmentLeftTheView = ((timelineAlbumFilter !== "" && targetAlbumName !== timelineAlbumFilter)
+                                      || (currentFolderAlbumFilter !== "" && targetAlbumName !== currentFolderAlbumFilter)
+                                      || removedFromOpenAlbum)
+        albumAssignmentCounter = albumAssignmentCounter + 1
     }
 
     function applyFolderAlbumFilter() {
