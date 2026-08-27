@@ -436,6 +436,7 @@ def buildImageDHash ( filePath ):
 
 
 def findDuplicateImages ( filePathList, tolerance ):
+    tolerance = int(tolerance) # qml hands numbers over as floats, and the chunk count below indexes with it
     # load the whole dhash cache once, any load problem -> rebuild from scratch, that keeps the cache clean
     cachedHashDict = {}
     try:
@@ -452,7 +453,8 @@ def findDuplicateImages ( filePathList, tolerance ):
     newCacheEntries = {}
     for filePath in filePathList:
         someHashCounter += 1
-        pyotherside.send('scanProgress', someHashCounter, imagesTotalAmount)
+        if someHashCounter % 25 == 0 or someHashCounter == imagesTotalAmount:
+            pyotherside.send('scanProgress', someHashCounter, imagesTotalAmount) # every file would be 24k round trips for nothing
         try:
             statResult = os.stat(filePath)
             if filePath in cachedHashDict and cachedHashDict[filePath][0] == statResult.st_mtime:
@@ -478,44 +480,65 @@ def findDuplicateImages ( filePathList, tolerance ):
         except: # e.g. read-only filesystem -> no cache this time, gets rebuilt on next run
             pass
 
-    # group the hashes, exact match via one dict, near match via 16 bit chunk buckets (pigeonhole: distance <= 3 shares a chunk, verify real distance after)
-    groupOfPath = {}
+    # group the hashes: files sharing a hash always belong together, near matching additionally
+    # buckets the distinct hashes into tolerance+1 chunks. within a distance of t at most t chunks
+    # can carry a differing bit, so at least one chunk has to be identical (pigeonhole) - with
+    # fewer chunks than that a pair sitting exactly at the tolerance is never even compared
+    pathsByHash = {}
+    for filePath in filePathList:
+        if filePath in hashByPath:
+            pathsByHash.setdefault(hashByPath[filePath], []).append(filePath)
+
     if tolerance == 0:
-        pathsByHash = {}
-        for filePath in filePathList:
-            if filePath in hashByPath:
-                pathsByHash.setdefault(hashByPath[filePath], []).append(filePath)
         duplicateGroups = [pathGroup for pathGroup in pathsByHash.values() if len(pathGroup) > 1]
     else:
+        chunkCount = tolerance + 1
+        chunkEdges = [ (chunkIndex * 64) // chunkCount for chunkIndex in range(chunkCount + 1) ]
         candidateBuckets = {}
-        for filePath in filePathList:
-            if filePath in hashByPath:
-                imageDHash = hashByPath[filePath]
-                for chunkIndex in range(4):
-                    candidateBuckets.setdefault( (chunkIndex, (imageDHash >> (chunkIndex * 16)) & 0xFFFF), []).append(filePath)
-        # union-find over verified pairs
-        parentOfPath = {}
-        pairedPathsSet = set()
-        def findRoot ( somePath ):
-            while parentOfPath.get(somePath, somePath) != somePath:
-                somePath = parentOfPath[somePath]
-            return somePath
-        for bucketPaths in candidateBuckets.values():
-            if len(bucketPaths) < 2:
+        for imageDHash in pathsByHash:
+            for chunkIndex in range(chunkCount):
+                lowBit = chunkEdges[chunkIndex]
+                chunkMask = (1 << (chunkEdges[chunkIndex + 1] - lowBit)) - 1
+                candidateBuckets.setdefault( (chunkIndex, (imageDHash >> lowBit) & chunkMask), []).append(imageDHash)
+
+        # union-find over the distinct hashes instead of the paths: a hundred copies of one image
+        # are a single hash here, not a hundred entry bucket compared against itself
+        parentOfHash = {}
+        pairedHashSet = set()
+        def findRoot ( someHash ):
+            rootHash = someHash
+            while parentOfHash.get(rootHash, rootHash) != rootHash:
+                rootHash = parentOfHash[rootHash]
+            while someHash != rootHash: # flatten the chain, so the next walk over it is one step
+                nextHash = parentOfHash.get(someHash, rootHash)
+                parentOfHash[someHash] = rootHash
+                someHash = nextHash
+            return rootHash
+        # the distance decides, and only a real match touches the union-find: one popcount is a
+        # single C call while walking two chains is a python loop, and most candidates do not match
+        for bucketHashes in candidateBuckets.values():
+            if len(bucketHashes) < 2:
                 continue
-            for i in range(len(bucketPaths)):
-                for j in range(i + 1, len(bucketPaths)):
-                    if bin(hashByPath[bucketPaths[i]] ^ hashByPath[bucketPaths[j]]).count("1") <= tolerance:
-                        pairedPathsSet.add(bucketPaths[i])
-                        pairedPathsSet.add(bucketPaths[j])
-                        rootA = findRoot(bucketPaths[i])
-                        rootB = findRoot(bucketPaths[j])
+            for i in range(len(bucketHashes)):
+                someHash = bucketHashes[i]
+                for j in range(i + 1, len(bucketHashes)):
+                    otherHash = bucketHashes[j]
+                    if bin(someHash ^ otherHash).count("1") <= tolerance:
+                        pairedHashSet.add(someHash)
+                        pairedHashSet.add(otherHash)
+                        rootA = findRoot(someHash)
+                        rootB = findRoot(otherHash)
                         if rootA != rootB:
-                            parentOfPath[rootA] = rootB
+                            parentOfHash[rootA] = rootB
+        # identical files are duplicates of each other whether or not a near neighbour turned up
+        for imageDHash in pathsByHash:
+            if len(pathsByHash[imageDHash]) > 1:
+                pairedHashSet.add(imageDHash)
+
         pathsByRoot = {}
         for filePath in filePathList:
-            if filePath in pairedPathsSet:
-                pathsByRoot.setdefault(findRoot(filePath), []).append(filePath)
+            if filePath in hashByPath and hashByPath[filePath] in pairedHashSet:
+                pathsByRoot.setdefault(findRoot(hashByPath[filePath]), []).append(filePath)
         duplicateGroups = [pathGroup for pathGroup in pathsByRoot.values() if len(pathGroup) > 1]
 
     # every group is measured against its own first member, -1 marks that reference image itself.
