@@ -40,7 +40,6 @@ Page {
     property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
     property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
     property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
-    property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
     property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
     property int albumAssignmentCounter : 0 // bumped after an album was set from the viewer, an open viewer reacts to the change
     property string lastRenamedOldPath : "" // an open viewer follows a renamed file through these

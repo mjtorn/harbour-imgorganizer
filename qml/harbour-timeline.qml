@@ -39,6 +39,7 @@ ApplicationWindow {
 
     // random images buffer
     property string coverImagePath : ""
+    property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded, shared by the album view and every picker
     property var previousRandomImagesAlbumArray : []
 
 
