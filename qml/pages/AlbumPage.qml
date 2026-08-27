@@ -100,6 +100,14 @@ Page {
                 }
             }
             MenuItem {
+                // the item names the mode one switches to, matching is a setting so it sticks
+                visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum)
+                text: (infoDuplicateTolerance === 0) ? qsTr("Match near") : qsTr("Match exact")
+                onClicked: {
+                    toggleDuplicateTolerance()
+                }
+            }
+            MenuItem {
                 text: (multiSelectActive === true) ? qsTr("Unselect") : qsTr("Selection")
                 onClicked: {
                     if (multiSelectActive === true) {
@@ -125,6 +133,18 @@ Page {
             }
         }
         VerticalScrollDecorator {}
+
+        BusyIndicator {
+            // an empty grid has no tiles to carry their own indicators, so a search would look like nothing happening
+            anchors.centerIn: parent
+            running: (finishedLoading === false) && (idGridViewAlbums.count === 0)
+            size: BusyIndicatorSize.Large
+        }
+        ViewPlaceholder {
+            enabled: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (idGridViewAlbums.count === 0) && (finishedLoading === true)
+            text: qsTr("No duplicates")
+            hintText: (infoDuplicateTolerance === 0) ? qsTr("Try matching near duplicates") : ""
+        }
 
         model: (currentModel === "albums") ? idListModelImagesAlbum : idListModelImagesFolder
         delegate: GridItem {
@@ -584,6 +604,26 @@ Page {
                     anchors.centerIn: parent
                     highlightColor: Theme.primaryColor
                     source: "image://theme/icon-l-acknowledge?"
+                }
+                Label {
+                    // the group number tells which tiles belong together, the distance tells how far
+                    // apart they are - a near group chains, so a member can sit beyond the tolerance
+                    visible: (currentAlbum === standardDuplicatesAlbum) && (duplicateGroup >= 0)
+                    anchors.bottom: parent.bottom // the favourite icon owns the upper left corner
+                    anchors.left: parent.left
+                    leftPadding: Theme.paddingSmall
+                    rightPadding: Theme.paddingSmall
+                    color: Theme.primaryColor
+                    font.pixelSize: Theme.fontSizeTiny
+                    text: "#" + (duplicateGroup + 1) + ((infoDuplicateTolerance !== 0 && duplicateDistance >= 0) ? ("  Δ" + duplicateDistance) : "")
+
+                    Rectangle {
+                        z: -1
+                        anchors.fill: parent
+                        visible: idBackHighlight.visible === false
+                        color: Theme.highlightDimmerColor
+                        opacity: 0.75
+                    }
                 }
             }
             BusyIndicator {

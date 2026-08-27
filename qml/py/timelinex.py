@@ -518,7 +518,17 @@ def findDuplicateImages ( filePathList, tolerance ):
                 pathsByRoot.setdefault(findRoot(filePath), []).append(filePath)
         duplicateGroups = [pathGroup for pathGroup in pathsByRoot.values() if len(pathGroup) > 1]
 
-    pyotherside.send('returnDuplicateImages', duplicateGroups)
+    # every group is measured against its own first member, -1 marks that reference image itself.
+    # near matching groups by union-find over verified pairs, so a chained member can sit further
+    # away than the tolerance - the distance is what makes that visible instead of mysterious
+    distanceFromReference = {}
+    for pathGroup in duplicateGroups:
+        referenceHash = hashByPath[pathGroup[0]]
+        distanceFromReference[pathGroup[0]] = -1
+        for filePath in pathGroup[1:]:
+            distanceFromReference[filePath] = bin(referenceHash ^ hashByPath[filePath]).count("1")
+
+    pyotherside.send('returnDuplicateImages', duplicateGroups, distanceFromReference)
 
 
 def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):

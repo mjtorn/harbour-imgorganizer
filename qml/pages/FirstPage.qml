@@ -461,7 +461,7 @@ Page {
                 }
                 removeDeletedFilesFromLists(deletedPathArray)
             });
-            setHandler('returnDuplicateImages', function(duplicateGroups) {
+            setHandler('returnDuplicateImages', function(duplicateGroups, distanceFromReference) {
                 idListModelDuplicates.clear()
                 var pathIndexMap = ({})
                 for (var i = 0; i < idListModelImages.count; i++) {
@@ -487,7 +487,8 @@ Page {
                                 "timestampSource" : imageItem.timestampSource,
                                 "isFavourite" : imageItem.isFavourite,
                                 "listModelImages_baseIndex" : baseIndex,
-                                "duplicateGroup" : g
+                                "duplicateGroup" : g,
+                                "duplicateDistance" : (distanceFromReference[duplicateGroups[g][m]] !== undefined) ? distanceFromReference[duplicateGroups[g][m]] : -1
                             })
                         }
                     }
@@ -2039,7 +2040,9 @@ Page {
                         "isSearchResult" : false,
                         "timestampSource" : idListModelImages.get(i).timestampSource,
                         "isFavourite" : idListModelImages.get(i).isFavourite,
-                        "listModelImages_baseIndex" : i
+                        "listModelImages_baseIndex" : i,
+                        "duplicateGroup" : -1,
+                        "duplicateDistance" : -1
                     })
                 }
             }
@@ -2061,7 +2064,9 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelDuplicates.get(i).timestampSource,
                     "isFavourite" : idListModelDuplicates.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelDuplicates.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelDuplicates.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : idListModelDuplicates.get(i).duplicateGroup,
+                    "duplicateDistance" : idListModelDuplicates.get(i).duplicateDistance
                 })
             }
         }
@@ -2083,7 +2088,9 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelFavourites.get(i).timestampSource,
                     "isFavourite" : idListModelFavourites.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelFavourites.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelFavourites.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -2105,7 +2112,9 @@ Page {
                     "isSearchResult" : idListModelSearch.get(i).isSearchResult,
                     "timestampSource" : idListModelSearch.get(i).timestampSource,
                     "isFavourite" : idListModelSearch.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelSearch.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelSearch.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -2228,7 +2237,9 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelImages.get(i).timestampSource,
                     "isFavourite" : idListModelImages.get(i).isFavourite,
-                    "listModelImages_baseIndex" : i
+                    "listModelImages_baseIndex" : i,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -2247,6 +2258,19 @@ Page {
             if (membersPerGroup[idListModelDuplicates.get(i).duplicateGroup] < 2) {
                 idListModelDuplicates.remove(i)
                 droppedAny = true
+            }
+        }
+        // renumber what is left, a gap in the group numbers would only make the user wonder
+        var newNumberForGroup = ({})
+        var nextGroupNumber = 0
+        for (i = 0; i < idListModelDuplicates.count; i++) {
+            var oldNumber = idListModelDuplicates.get(i).duplicateGroup
+            if (newNumberForGroup[oldNumber] === undefined) {
+                newNumberForGroup[oldNumber] = nextGroupNumber
+                nextGroupNumber = nextGroupNumber + 1
+            }
+            if (newNumberForGroup[oldNumber] !== oldNumber) {
+                idListModelDuplicates.setProperty(i, "duplicateGroup", newNumberForGroup[oldNumber])
             }
         }
         // the survivor was not deleted, so nothing else would take its copy out of an open duplicates page
@@ -2300,6 +2324,19 @@ Page {
         }
         finishedLoading = false
         py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : 4 )
+    }
+
+    function toggleDuplicateTolerance() {
+        // only the setting is touched, the watchdog underneath re-groups the images - the hashes
+        // come from the cache, so switching modes costs no rehashing
+        var newTolerance = (infoDuplicateTolerance === 0) ? 1 : 0
+        var haveResultsToRebuild = (idListModelDuplicates.count > 0) // that is all the watchdog reacts to
+        storageItem.setSetting("infoDuplicateTolerance", newTolerance)
+        infoDuplicateTolerance = newTolerance
+        if (haveResultsToRebuild === false) {
+            // exact matching may have found nothing at all, switching to near must still search
+            runDuplicateSearch()
+        }
     }
 
     property var trackedDuplicateTolerance : infoDuplicateTolerance // watchdog pattern: a changed matching setting rebuilds existing results

@@ -106,6 +106,22 @@
         <source>Open with</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Match near</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Match exact</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try matching near duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>BannerCrop</name>

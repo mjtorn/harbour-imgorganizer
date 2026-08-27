@@ -106,6 +106,22 @@
         <source>Open with</source>
         <translation>Öppna med</translation>
     </message>
+    <message>
+        <source>Match near</source>
+        <translation>Matcha nära</translation>
+    </message>
+    <message>
+        <source>Match exact</source>
+        <translation>Matcha exakt</translation>
+    </message>
+    <message>
+        <source>No duplicates</source>
+        <translation>Inga dubbletter</translation>
+    </message>
+    <message>
+        <source>Try matching near duplicates</source>
+        <translation>Prova att matcha nära dubbletter</translation>
+    </message>
 </context>
 <context>
     <name>BannerCrop</name>

@@ -106,6 +106,22 @@
         <source>Resize</source>
         <translation>Skalieren</translation>
     </message>
+    <message>
+        <source>Match near</source>
+        <translation>Ähnliche finden</translation>
+    </message>
+    <message>
+        <source>Match exact</source>
+        <translation>Exakte finden</translation>
+    </message>
+    <message>
+        <source>No duplicates</source>
+        <translation>Keine Duplikate</translation>
+    </message>
+    <message>
+        <source>Try matching near duplicates</source>
+        <translation>Versuche ähnliche Duplikate</translation>
+    </message>
 </context>
 <context>
     <name>BannerCrop</name>
