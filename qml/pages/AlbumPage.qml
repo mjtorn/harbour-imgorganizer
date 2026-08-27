@@ -34,27 +34,45 @@ Page {
         id: bannerRenameFileFromAlbum
     }
 
-    Slider {
-        // pinned to the page, so it stays put while the grid scrolls and is always at hand in near matching
-        id: idSliderDuplicateTolerance
-        visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (infoDuplicateTolerance !== 0)
-        enabled: visible && (finishedLoading === true) // no stacking a second search onto a running one
+    Column {
+        // pinned to the page, so whatever is in here stays put while the grid scrolls. with nothing
+        // visible the column collapses to no height at all and the grid gets the whole page
+        id: idColumnPinnedBottom
         anchors.bottom: parent.bottom
         width: parent.width
-        height: Theme.itemSizeLarge
-        minimumValue: 1
-        maximumValue: 8
-        stepSize: 1
-        leftMargin: Theme.paddingLarge * 2
-        rightMargin: Theme.paddingLarge * 2
-        valueText: "Δ" + Math.round(value) // a step of one, but never show a float if it ever rounds off
-        Component.onCompleted: {
-            value = infoDuplicateDistance // assigned, not bound: dragging the handle writes value anyway
+
+        Label {
+            // hashing a whole library takes minutes on a cold cache, and a bare spinner made that look like a hang
+            visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (finishedLoading === false) && (maxScannedImages > 0)
+            width: parent.width
+            height: Theme.itemSizeExtraSmall
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: Theme.highlightColor
+            font.pixelSize: Theme.fontSizeSmall
+            text: currentlyScannedImage + " / " + maxScannedImages
         }
-        onDownChanged: {
-            // the slider component owns onReleased for its own dragging, letting go is watched here
-            if (down === false && Math.round(value) !== infoDuplicateDistance) {
-                setDuplicateDistance( Math.round(value) )
+        Slider {
+            // always at hand while near matching is active
+            id: idSliderDuplicateTolerance
+            visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (infoDuplicateTolerance !== 0)
+            enabled: visible && (finishedLoading === true) // no stacking a second search onto a running one
+            width: parent.width
+            height: Theme.itemSizeLarge
+            minimumValue: 1
+            maximumValue: 8
+            stepSize: 1
+            leftMargin: Theme.paddingLarge * 2
+            rightMargin: Theme.paddingLarge * 2
+            valueText: "Δ" + Math.round(value) // a step of one, but never show a float if it ever rounds off
+            Component.onCompleted: {
+                value = infoDuplicateDistance // assigned, not bound: dragging the handle writes value anyway
+            }
+            onDownChanged: {
+                // the slider component owns onReleased for its own dragging, letting go is watched here
+                if (down === false && Math.round(value) !== infoDuplicateDistance) {
+                    setDuplicateDistance( Math.round(value) )
+                }
             }
         }
     }
@@ -64,7 +82,7 @@ Page {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: (idSliderDuplicateTolerance.visible === true) ? idSliderDuplicateTolerance.top : parent.bottom
+        anchors.bottom: idColumnPinnedBottom.top
         clip: true
         cellWidth: minimumTimelineListItemHeight
         cellHeight: cellWidth
