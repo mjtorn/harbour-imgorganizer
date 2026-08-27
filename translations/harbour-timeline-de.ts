@@ -460,6 +460,10 @@
         <source>About</source>
         <translation type="unfinished">Über</translation>
     </message>
+    <message>
+        <source>That did not work</source>
+        <translation>Das hat nicht funktioniert</translation>
+    </message>
 </context>
 <context>
     <name>LicenseListPart</name>

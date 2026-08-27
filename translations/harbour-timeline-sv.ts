@@ -460,6 +460,10 @@
         <source>About</source>
         <translation type="unfinished">Om</translation>
     </message>
+    <message>
+        <source>That did not work</source>
+        <translation>Det gick inte</translation>
+    </message>
 </context>
 <context>
     <name>LicenseListPart</name>

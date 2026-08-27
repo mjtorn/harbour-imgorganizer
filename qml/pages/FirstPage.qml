@@ -744,7 +744,19 @@ Page {
         }
 
         onError: {
-            //console.log('python error: ' + traceback) //when an exception is raised, this error handler will be called
+            // a python exception used to vanish here, leaving every busy indicator spinning for ever
+            // because the flags are only ever cleared by the handler of a result that never arrives
+            console.log('python error: ' + traceback)
+            finishedLoading = true
+            refreshingExifCache = false
+            // the notification object is shared, so set every field before publishing
+            idNotificationEditSaved.isTransient = true
+            idNotificationEditSaved.urgency = Notification.Low
+            idNotificationEditSaved.summary = ""
+            idNotificationEditSaved.body = ""
+            idNotificationEditSaved.previewSummary = qsTr("That did not work")
+            idNotificationEditSaved.previewBody = ""
+            idNotificationEditSaved.publish()
         }
         onReceived: {
             //console.log('got message from python: ' + data) //asychronous messages from Python arrive here; done there via pyotherside.send()
