@@ -2323,7 +2323,7 @@ Page {
             allPathsArray.push(idListModelImages.get(i).filePath)
         }
         finishedLoading = false
-        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : 4 )
+        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : infoDuplicateDistance )
     }
 
     function toggleDuplicateTolerance() {
@@ -2342,6 +2342,23 @@ Page {
     property var trackedDuplicateTolerance : infoDuplicateTolerance // watchdog pattern: a changed matching setting rebuilds existing results
     onTrackedDuplicateToleranceChanged: {
         if (idListModelDuplicates.count > 0) {
+            runDuplicateSearch()
+        }
+    }
+
+    function setDuplicateDistance( newDistance ) {
+        // the tolerance slider in DUPLICATES, same deal as the mode toggle above
+        var haveResultsToRebuild = (idListModelDuplicates.count > 0)
+        storageItem.setSetting("infoDuplicateDistance", newDistance)
+        infoDuplicateDistance = newDistance
+        if (haveResultsToRebuild === false) {
+            runDuplicateSearch()
+        }
+    }
+
+    property var trackedDuplicateDistance : infoDuplicateDistance // watchdog pattern again, a wider or tighter tolerance regroups
+    onTrackedDuplicateDistanceChanged: {
+        if (infoDuplicateTolerance !== 0 && idListModelDuplicates.count > 0) {
             runDuplicateSearch()
         }
     }

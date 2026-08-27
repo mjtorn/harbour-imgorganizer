@@ -21,6 +21,7 @@ ApplicationWindow {
     property var infoActivateCoverImages : parseInt(storageItem.getSetting("infoActivateCoverImages", 0))
     property var infoStrictReadOnly : parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) // 1 = never write metadata into image files
     property var infoDuplicateTolerance : parseInt(storageItem.getSetting("infoDuplicateTolerance", 0)) // 0 = exact perceptual match, 1 = near matches too
+    property var infoDuplicateDistance : parseInt(storageItem.getSetting("infoDuplicateDistance", 4)) // how many bits near matching allows, set from the slider in DUPLICATES
     property string lastEditedImagePath : "" // edits always save a copy, this is the most recent one
     property var lastDeletedPathsArray : [] // the most recently deleted files, open pages prune their own image references with it
     property string pendingGifAlbum : "" // album a freshly created gif joins once python reports it saved
