@@ -1088,6 +1088,27 @@ Page {
                         asynchronous: true
                         cache: false
 
+                        Image {
+                            // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                            id: idImageTimelineFallback
+                            anchors.fill: parent
+                            visible: idImageTimeline.status === Image.Error
+                            source: (idImageTimeline.status === Image.Error) ? filePath : ""
+                            sourceSize.width: parent.width
+                            sourceSize.height: parent.height
+                            autoTransform: true
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                        }
+                        Icon {
+                            // nothing could be decoded at all, a marker beats an empty square
+                            visible: idImageTimelineFallback.status === Image.Error
+                            anchors.centerIn: parent
+                            width: parent.width / 3
+                            height: width
+                            source: "image://theme/icon-m-image?"
+                        }
                         Rectangle {
                             id: idBackHighlightTimeline
                             visible: selected
@@ -1307,6 +1328,19 @@ Page {
                         fillMode: Image.PreserveAspectCrop
                         source: ((random_image !== undefined) && (random_image !== "") ) ? ("image://nemoThumbnail/" + random_image) : ""
                         //onSourceChanged: opacityAlbumImage.start()
+
+                        Image {
+                            // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                            anchors.fill: parent
+                            visible: idCoverAlbum.status === Image.Error
+                            source: (idCoverAlbum.status === Image.Error) ? random_image : ""
+                            sourceSize.width: parent.width
+                            sourceSize.height: parent.height
+                            autoTransform: true
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                        }
                     }
                     Image {
                         visible: infoActivateCoverImages !== 0 && finishedLoading
@@ -1530,6 +1564,19 @@ Page {
                             fillMode: Image.PreserveAspectCrop
                             source: ((random_image !== undefined) && (random_image !== "") ) ? ("image://nemoThumbnail/" + random_image) : ""
                             onSourceChanged: opacityFolderImage.start()
+
+                            Image {
+                                // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                                anchors.fill: parent
+                                visible: idCoverFolder.status === Image.Error
+                                source: (idCoverFolder.status === Image.Error) ? random_image : ""
+                                sourceSize.width: parent.width
+                                sourceSize.height: parent.height
+                                autoTransform: true
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: false
+                            }
                         }
                         Image {
                             visible: infoActivateCoverImages !== 0 && finishedLoading

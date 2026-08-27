@@ -525,6 +525,7 @@ Page {
             }
 
             Image {
+                id: idThumbAlbumTile
                 width: parent.width
                 height: width
                 sourceSize.width: width
@@ -535,6 +536,27 @@ Page {
                 asynchronous: true
                 cache: false
 
+                Image {
+                    // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                    id: idThumbAlbumTileFallback
+                    anchors.fill: parent
+                    visible: idThumbAlbumTile.status === Image.Error
+                    source: (idThumbAlbumTile.status === Image.Error) ? filePath : ""
+                    sourceSize.width: parent.width
+                    sourceSize.height: parent.height
+                    autoTransform: true
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: false
+                }
+                Icon {
+                    // nothing could be decoded at all, a marker beats an empty square
+                    visible: idThumbAlbumTileFallback.status === Image.Error
+                    anchors.centerIn: parent
+                    width: parent.width / 3
+                    height: width
+                    source: "image://theme/icon-m-image?"
+                }
                 Rectangle {
                     id: idBackHighlight
                     visible: selected
