@@ -127,6 +127,29 @@
     </message>
 </context>
 <context>
+    <name>BannerFixFileType</name>
+    <message>
+        <source>This is a %1 file with a wrong name</source>
+        <translation>Det här är en %1-fil med fel namn</translation>
+    </message>
+    <message>
+        <source>No decoder can read this file</source>
+        <translation>Ingen avkodare kan läsa filen</translation>
+    </message>
+    <message>
+        <source>Rename it to %1 so every app can show it</source>
+        <translation>Byt namn till %1 så alla appar kan visa den</translation>
+    </message>
+    <message>
+        <source>Delete it? It is %1 kB and shows up empty everywhere</source>
+        <translation>Ta bort den? Den är %1 kB och visas tom överallt</translation>
+    </message>
+    <message>
+        <source>Delete file?</source>
+        <translation>Vill du ta bort filen?</translation>
+    </message>
+</context>
+<context>
     <name>BannerGif</name>
     <message>
         <source>file name</source>
@@ -762,6 +785,10 @@
 </context>
 <context>
     <name>ViewPage</name>
+    <message>
+        <source>This image cannot be displayed</source>
+        <translation>Den här bilden kan inte visas</translation>
+    </message>
     <message>
         <source>Location copied</source>
         <translation>Sökväg kopierad</translation>

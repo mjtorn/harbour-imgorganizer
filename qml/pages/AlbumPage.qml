@@ -550,7 +550,7 @@ Page {
                     cache: false
                 }
                 Icon {
-                    // nothing could be decoded at all, a marker beats an empty square
+                    // nothing could be decoded at all, a marker beats an empty square - opening it explains why
                     visible: idThumbAlbumTileFallback.status === Image.Error
                     anchors.centerIn: parent
                     width: parent.width / 3

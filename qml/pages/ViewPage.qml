@@ -37,7 +37,49 @@ Page {
     property bool showImageInfo : false
     property var currentImageInfo : ({ "fileName" : "", "folderPath" : "", "dateText" : "", "album" : "", "isFavourite" : "false" })
     onShowImageInfoChanged: refreshImageInfo()
-    onCurrentImagePathChanged: refreshImageInfo()
+    onCurrentImagePathChanged: {
+        refreshImageInfo()
+        inspectShownImage( false ) // twelve bytes, just to see whether the name matches the content
+    }
+
+    property var pendingTroubleFinding : null // a finding that arrived before the page was ready to show it
+
+    function inspectShownImage( deepCheck ) {
+        if (currentImagePath === undefined || currentImagePath === "") { return }
+        py.inspectImageFile( (currentImagePath).toString(), deepCheck )
+    }
+
+    Connections {
+        // a finding arrived, see whether it concerns the image on screen
+        target: page
+        onImageInspectionCounterChanged: {
+            var shownPath = (currentImagePath !== undefined) ? (currentImagePath).toString() : ""
+            var finding = inspectedImageFiles[shownPath]
+            if (finding === undefined || finding.reason !== "wrongExtension") { return }
+            offerFileTypeFix( shownPath, finding )
+        }
+    }
+    onStatusChanged: {
+        // opening the page takes a push animation, a finding that arrived during it waited for this
+        if (status === PageStatus.Active && pendingTroubleFinding !== null) {
+            var waitingFinding = pendingTroubleFinding
+            pendingTroubleFinding = null
+            if (waitingFinding.path === ((currentImagePath !== undefined) ? (currentImagePath).toString() : "")) {
+                offerFileTypeFix( waitingFinding.path, waitingFinding )
+            }
+        }
+    }
+
+    function offerFileTypeFix( imagePath, finding ) {
+        if (runSlideshowTimer === true) { return } // never interrupt a running slideshow
+        if (status !== PageStatus.Active) {
+            // the page is still animating in, keep the finding until it is on screen instead of losing it
+            pendingTroubleFinding = { "path" : imagePath, "reason" : finding.reason, "realKind" : finding.realKind,
+                                      "suggestedName" : finding.suggestedName, "fileSize" : finding.fileSize }
+            return
+        }
+        bannerFixFileTypeFromView.notify( imagePath, finding.reason, finding.realKind, finding.suggestedName, finding.fileSize, "viewPage" )
+    }
 
     function copyImageLocation() {
         Clipboard.text = (currentImagePath).toString()
@@ -142,6 +184,7 @@ Page {
     backgroundColor: "black"
     Component.onCompleted: {
         viewpageActiveFocus = true
+        inspectShownImage( false )
     }
     Component.onDestruction: {
         viewpageActiveFocus = false
@@ -206,6 +249,9 @@ Page {
     }
     BannerRenameFile {
         id: bannerRenameFileFromView
+    }
+    BannerFixFileType {
+        id: bannerFixFileTypeFromView
     }
     NumberAnimation {
         id: animateLeftListEnd
@@ -289,6 +335,12 @@ Page {
                             finishedLoadingView = true
                             firstTimeLoading = false
                             currentSlideshowImagePath = source
+                        }
+                        else if (status === Image.Error) {
+                            // nothing can decode this file, without this the busy indicator spins forever
+                            finishedLoadingView = true
+                            firstTimeLoading = false
+                            inspectShownImage( true ) // a wrong name is fixable, real corruption is not
                         }
                     }
 
@@ -642,6 +694,38 @@ Page {
             anchors.centerIn: parent
             running: finishedLoadingView === false
             size: BusyIndicatorSize.Large
+        }
+        Column {
+            // an undecodable file would otherwise be an unexplained black screen
+            visible: idImageView.status === Image.Error
+            anchors.centerIn: parent
+            width: parent.width - 4*Theme.paddingLarge
+            spacing: Theme.paddingLarge
+
+            Icon {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Theme.iconSizeLarge
+                height: width
+                source: "image://theme/icon-m-image?"
+            }
+            Label {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
+                font.pixelSize: Theme.fontSizeSmall
+                text: qsTr("This image cannot be displayed")
+            }
+            Label {
+                // the suggestion banner covers the fixable case, so say a word about this one
+                visible: text !== ""
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                text: (currentImageInfo.fileName !== undefined) ? currentImageInfo.fileName : ""
+            }
         }
     }
 

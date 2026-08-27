@@ -25,6 +25,7 @@ DISTFILES += qml/harbour-timeline.qml \
     qml/pages/BannerColorize.qml \
     qml/pages/BannerCrop.qml \
     qml/pages/BannerEditMeta.qml \
+    qml/pages/BannerFixFileType.qml \
     qml/pages/BannerGif.qml \
     qml/pages/BannerPaint.qml \
     qml/pages/BannerRename.qml \

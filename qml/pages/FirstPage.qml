@@ -46,6 +46,7 @@ Page {
     property string lastRenamedNewPath : ""
     property int fileRenameCounter : 0
     property bool albumAssignmentLeftTheView : false // the image left the album filter or the album page being browsed
+    property int imageInspectionCounter : 0 // bumped when a finding arrived, the viewer reacts to the change
     property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
     property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
 
@@ -499,6 +500,15 @@ Page {
                 }
                 finishedLoading = true
             });
+            setHandler('imageFileInspected', function(filePath, reason, realKind, suggestedName, fileSize) {
+                var updatedFindings = ({})
+                for (var knownPath in inspectedImageFiles) {
+                    updatedFindings[knownPath] = inspectedImageFiles[knownPath]
+                }
+                updatedFindings[filePath] = { "reason" : reason, "realKind" : realKind, "suggestedName" : suggestedName, "fileSize" : fileSize }
+                inspectedImageFiles = updatedFindings // a fresh object, so anything bound to it re-evaluates
+                imageInspectionCounter = imageInspectionCounter + 1 // a counter, never a bool reset in its own handler
+            });
             setHandler('returnRenamedFile', function(oldPath, newPath, errorReason) {
                 if (errorReason !== "") { // nothing was renamed, the original keeps its name
                     lastNotifiedImagePath = ""
@@ -679,6 +689,9 @@ Page {
         }
         function createAnimatedGif( gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ) {
             call("timelinex.createAnimatedGif", [ gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ])
+        }
+        function inspectImageFile( filePath, deepCheck ) {
+            call("timelinex.inspectImageFile", [ filePath, deepCheck ])
         }
         function renameImageFile( oldPath, targetStorageMedia, targetFolder, newFileName ) {
             call("timelinex.renameImageFile", [ oldPath, targetStorageMedia, targetFolder, newFileName ])
@@ -1102,7 +1115,7 @@ Page {
                             cache: false
                         }
                         Icon {
-                            // nothing could be decoded at all, a marker beats an empty square
+                            // nothing could be decoded at all, a marker beats an empty square - opening it explains why
                             visible: idImageTimelineFallback.status === Image.Error
                             anchors.centerIn: parent
                             width: parent.width / 3

@@ -808,6 +808,54 @@ def checkFileExistence( inWhichTable, filePath ):
 
 
 
+def inspectImageFile ( filePath, deepCheck ):
+    # the magic check is twelve bytes, cheap enough for every image the viewer opens,
+    # the decode attempt only runs when something already went wrong (deepCheck)
+    magicKinds = ( (b"\xff\xd8\xff", "jpg", (".jpg", ".jpeg")),
+                   (b"\x89PNG\r\n\x1a\n", "png", (".png",)),
+                   (b"GIF87a", "gif", (".gif",)),
+                   (b"GIF89a", "gif", (".gif",)),
+                   (b"BM", "bmp", (".bmp",)),
+                   (b"II*\x00", "tif", (".tif", ".tiff")),
+                   (b"MM\x00*", "tif", (".tif", ".tiff")) )
+    try:
+        fileSize = os.path.getsize(filePath)
+        with open(filePath, 'rb') as imageFile:
+            headBytes = imageFile.read(12)
+
+        realKind = ""
+        wantedExtensions = ()
+        for magicBytes, kindName, kindExtensions in magicKinds:
+            if headBytes.startswith(magicBytes):
+                realKind = kindName
+                wantedExtensions = kindExtensions
+        if headBytes[:4] == b"RIFF" and headBytes[8:12] == b"WEBP": # webp carries its magic further in
+            realKind = "webp"
+            wantedExtensions = (".webp",)
+
+        # the extension lies about the content, that is what makes the thumbnailer refuse the file
+        if realKind != "" and not filePath.lower().endswith(wantedExtensions):
+            dotIndex = filePath.rfind(".")
+            baseName = filePath[:dotIndex] if dotIndex > filePath.rfind("/") else filePath
+            suggestedFileName = (baseName + "." + realKind)[baseName.rfind("/")+1:]
+            pyotherside.send('imageFileInspected', filePath, "wrongExtension", realKind, suggestedFileName, fileSize)
+            return
+
+        # extension and content agree, so ask pillow whether the data is usable at all
+        if deepCheck is True:
+            try:
+                img = Image.open(filePath)
+                img.load()
+                img.close()
+            except:
+                pyotherside.send('imageFileInspected', filePath, "undecodable", realKind, "", fileSize)
+                return
+
+        pyotherside.send('imageFileInspected', filePath, "", realKind, "", fileSize)
+    except: # not even readable
+        pyotherside.send('imageFileInspected', filePath, "undecodable", "", "", 0)
+
+
 def renameImageFile ( oldPath, targetStorageMedia, targetFolder, newFileName ):
     # renames in place when the current directory was chosen, otherwise moves the file along
     try:

@@ -39,6 +39,7 @@ ApplicationWindow {
 
     // random images buffer
     property string coverImagePath : ""
+    property var inspectedImageFiles : ({}) // path -> what an inspection found out about a file the thumbnailer refused
     property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded, shared by the album view and every picker
     property var previousRandomImagesAlbumArray : []
 
