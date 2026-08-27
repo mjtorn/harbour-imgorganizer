@@ -501,21 +501,9 @@ def findDuplicateImages ( filePathList, tolerance ):
                 chunkMask = (1 << (chunkEdges[chunkIndex + 1] - lowBit)) - 1
                 candidateBuckets.setdefault( (chunkIndex, (imageDHash >> lowBit) & chunkMask), []).append(imageDHash)
 
-        # union-find over the distinct hashes instead of the paths: a hundred copies of one image
-        # are a single hash here, not a hundred entry bucket compared against itself
-        parentOfHash = {}
-        pairedHashSet = set()
-        def findRoot ( someHash ):
-            rootHash = someHash
-            while parentOfHash.get(rootHash, rootHash) != rootHash:
-                rootHash = parentOfHash[rootHash]
-            while someHash != rootHash: # flatten the chain, so the next walk over it is one step
-                nextHash = parentOfHash.get(someHash, rootHash)
-                parentOfHash[someHash] = rootHash
-                someHash = nextHash
-            return rootHash
-        # the distance decides, and only a real match touches the union-find: one popcount is a
-        # single C call while walking two chains is a python loop, and most candidates do not match
+        # every verified pair, per distinct hash: a hundred copies of one image are a single hash
+        # here, not a hundred entry bucket compared against itself
+        matesOfHash = {}
         for bucketHashes in candidateBuckets.values():
             if len(bucketHashes) < 2:
                 continue
@@ -524,22 +512,49 @@ def findDuplicateImages ( filePathList, tolerance ):
                 for j in range(i + 1, len(bucketHashes)):
                     otherHash = bucketHashes[j]
                     if bin(someHash ^ otherHash).count("1") <= tolerance:
-                        pairedHashSet.add(someHash)
-                        pairedHashSet.add(otherHash)
-                        rootA = findRoot(someHash)
-                        rootB = findRoot(otherHash)
-                        if rootA != rootB:
-                            parentOfHash[rootA] = rootB
-        # identical files are duplicates of each other whether or not a near neighbour turned up
-        for imageDHash in pathsByHash:
-            if len(pathsByHash[imageDHash]) > 1:
-                pairedHashSet.add(imageDHash)
+                        matesOfHash.setdefault(someHash, set()).add(otherHash)
+                        matesOfHash.setdefault(otherHash, set()).add(someHash)
 
-        pathsByRoot = {}
+        # a group is a clique: every member within the tolerance of every other member, so the
+        # slider means what it says. merging every pair transitively instead would chain - two
+        # images four apart from a third but eight from each other would share a group at four -
+        # and a chain has no bound at all: at eight it grew one group of 792 images, some of them
+        # 55 bits apart. the cost of not chaining is that a hash whose only mates were claimed by
+        # earlier groups waits for a later search, once the copies around it are dealt with
+        scanOrderOfHash = {}
+        for imageDHash in pathsByHash: # insertion ordered, so this is the order the files were scanned in
+            scanOrderOfHash[imageDHash] = len(scanOrderOfHash)
+        groupedHashSet = set()
+        hashGroupList = []
+        for imageDHash in pathsByHash:
+            if imageDHash in groupedHashSet:
+                continue
+            hashGroup = [imageDHash]
+            # scan order, not set order, so the same library always groups the same way
+            for mateHash in sorted(matesOfHash.get(imageDHash, ()), key=lambda someHash: scanOrderOfHash[someHash]):
+                if mateHash in groupedHashSet:
+                    continue
+                fitsAll = True
+                for memberHash in hashGroup:
+                    if bin(mateHash ^ memberHash).count("1") > tolerance:
+                        fitsAll = False
+                        break
+                if fitsAll is True:
+                    hashGroup.append(mateHash)
+            # identical files are duplicates of each other whether or not a near neighbour turned up
+            if len(hashGroup) > 1 or len(pathsByHash[imageDHash]) > 1:
+                hashGroupList.append(hashGroup)
+                groupedHashSet.update(hashGroup)
+
+        groupIndexOfHash = {}
+        for groupIndex in range(len(hashGroupList)):
+            for imageDHash in hashGroupList[groupIndex]:
+                groupIndexOfHash[imageDHash] = groupIndex
+        pathsByGroupIndex = {}
         for filePath in filePathList:
-            if filePath in hashByPath and hashByPath[filePath] in pairedHashSet:
-                pathsByRoot.setdefault(findRoot(hashByPath[filePath]), []).append(filePath)
-        duplicateGroups = [pathGroup for pathGroup in pathsByRoot.values() if len(pathGroup) > 1]
+            if filePath in hashByPath and hashByPath[filePath] in groupIndexOfHash:
+                pathsByGroupIndex.setdefault(groupIndexOfHash[hashByPath[filePath]], []).append(filePath)
+        duplicateGroups = [pathGroup for pathGroup in pathsByGroupIndex.values() if len(pathGroup) > 1]
 
     # every group is measured against its own first member, -1 marks that reference image itself.
     # near matching groups by union-find over verified pairs, so a chained member can sit further
