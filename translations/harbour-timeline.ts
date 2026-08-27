@@ -190,6 +190,14 @@
         <source>Details &amp; Metadata</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Copy location</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>FirstPage</name>
@@ -747,6 +755,13 @@
     </message>
     <message>
         <source>Scan Folders:</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>ViewPage</name>
+    <message>
+        <source>Location copied</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

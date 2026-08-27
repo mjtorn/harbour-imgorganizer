@@ -190,6 +190,14 @@
         <source>Details &amp; Metadata</source>
         <translation>Detaljerad info &amp; metadata</translation>
     </message>
+    <message>
+        <source>Copy location</source>
+        <translation>Kopiera sökväg</translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation>Sökväg kopierad</translation>
+    </message>
 </context>
 <context>
     <name>FirstPage</name>
@@ -750,6 +758,13 @@
     <message>
         <source>Scan Folders:</source>
         <translation>Genomsök mappar:</translation>
+    </message>
+</context>
+<context>
+    <name>ViewPage</name>
+    <message>
+        <source>Location copied</source>
+        <translation>Sökväg kopierad</translation>
     </message>
 </context>
 </TS>

@@ -1,5 +1,6 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
+import Nemo.Notifications 1.0 // for the urgency enum, the notification itself comes from FirstPage
 
 
 Page {
@@ -121,6 +122,24 @@ Page {
         anchors.fill: parent
         contentHeight: idColumn.height  // Tell SilicaFlickable the height of its content.
 
+        PullDownMenu {
+            quickSelect: true
+
+            MenuItem {
+                text: qsTr("Copy location")
+                onClicked: {
+                    Clipboard.text = (filePath).toString()
+                    // the notification object lives on FirstPage and is shared, so set every field before publishing
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = qsTr("Location copied")
+                    idNotificationEditSaved.previewBody = fileName
+                    idNotificationEditSaved.publish()
+                }
+            }
+        }
         VerticalScrollDecorator {}
 
         Column {

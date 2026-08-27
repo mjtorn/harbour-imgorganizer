@@ -190,6 +190,14 @@
         <source>Details &amp; Metadata</source>
         <translation>Details &amp; Metadaten</translation>
     </message>
+    <message>
+        <source>Copy location</source>
+        <translation>Pfad kopieren</translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation>Pfad kopiert</translation>
+    </message>
 </context>
 <context>
     <name>FirstPage</name>
@@ -750,6 +758,13 @@
     <message>
         <source>for album, cover and slideshow</source>
         <translation>für Album, Cover und Slideshow</translation>
+    </message>
+</context>
+<context>
+    <name>ViewPage</name>
+    <message>
+        <source>Location copied</source>
+        <translation>Pfad kopiert</translation>
     </message>
 </context>
 </TS>

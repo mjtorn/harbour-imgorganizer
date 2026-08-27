@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import QtGraphicalEffects 1.0
+import Nemo.Notifications 1.0 // for the urgency enum, the notification itself comes from FirstPage
 
 
 Page {
@@ -37,6 +38,18 @@ Page {
     property var currentImageInfo : ({ "fileName" : "", "folderPath" : "", "dateText" : "", "album" : "", "isFavourite" : "false" })
     onShowImageInfoChanged: refreshImageInfo()
     onCurrentImagePathChanged: refreshImageInfo()
+
+    function copyImageLocation() {
+        Clipboard.text = (currentImagePath).toString()
+        // the notification object lives on FirstPage and is shared, so set every field before publishing
+        idNotificationEditSaved.isTransient = true
+        idNotificationEditSaved.urgency = Notification.Low
+        idNotificationEditSaved.summary = ""
+        idNotificationEditSaved.body = ""
+        idNotificationEditSaved.previewSummary = qsTr("Location copied")
+        idNotificationEditSaved.previewBody = currentImageInfo.fileName
+        idNotificationEditSaved.publish()
+    }
 
     function refreshImageInfo() {
         if (showImageInfo === false) { return } // costs nothing while the overlay is hidden
@@ -388,19 +401,36 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: parent.width - 2*Theme.paddingLarge
 
-                Label {
+                // tapping the name and folder copies the full path, the rest of the overlay still toggles it shut
+                Item {
                     width: parent.width
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.highlightColor
-                    truncationMode: TruncationMode.Fade
-                    text: currentImageInfo.fileName
-                }
-                Label {
-                    width: parent.width
-                    font.pixelSize: Theme.fontSizeTiny
-                    color: Theme.secondaryColor
-                    truncationMode: TruncationMode.Fade
-                    text: currentImageInfo.folderPath
+                    height: idColumnImagePath.height
+
+                    Column {
+                        id: idColumnImagePath
+                        width: parent.width
+
+                        Label {
+                            width: parent.width
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.highlightColor
+                            truncationMode: TruncationMode.Fade
+                            text: currentImageInfo.fileName
+                        }
+                        Label {
+                            width: parent.width
+                            font.pixelSize: Theme.fontSizeTiny
+                            color: Theme.secondaryColor
+                            truncationMode: TruncationMode.Fade
+                            text: currentImageInfo.folderPath
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            copyImageLocation()
+                        }
+                    }
                 }
                 Label {
                     width: parent.width
