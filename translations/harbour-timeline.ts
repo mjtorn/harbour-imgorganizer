@@ -47,6 +47,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Rename</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation type="unfinished"></translation>
     </message>
@@ -141,6 +145,17 @@
     </message>
 </context>
 <context>
+    <name>BannerRenameFile</name>
+    <message>
+        <source>file name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Current directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>BannerResize</name>
     <message>
         <source>width</source>
@@ -212,6 +227,14 @@
     </message>
     <message>
         <source>GIF created</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Name already taken</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rename failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

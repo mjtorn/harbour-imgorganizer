@@ -30,6 +30,9 @@ Page {
     BannerGif {
         id: bannerGifFromAlbum
     }
+    BannerRenameFile {
+        id: bannerRenameFileFromAlbum
+    }
 
     SilicaGridView {
         id: idGridViewAlbums
@@ -481,6 +484,14 @@ Page {
                                 chosenFilesArray.push(filePath)
                             }
                             removeFile( chosenFilesArray )
+                        }
+                    }
+                    MenuItem {
+                        enabled: multiSelectActive === false
+                        visible: enabled
+                        text: qsTr("Rename")
+                        onClicked: {
+                            bannerRenameFileFromAlbum.notify( filePath, fileName )
                         }
                     }
                     MenuItem {

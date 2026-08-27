@@ -14,6 +14,7 @@ import piexif.helper
 import subprocess                   # for running shell commands as separate processes
 import zipfile                      # for sharing multiple files at once, e.g. on bluetooth
 import pickle                       # for caching exif scan results between app starts
+import shutil                       # for moving files across filesystems, e.g. onto an sd card
 try:
     import PIL
     try:
@@ -749,24 +750,33 @@ def getEXIFdata ( filePath, creationDateMS, monthYear, day, folderPath, fileName
 
 
 
-def removeFromExifCache ( removedPathList ):
-    # keep the cache consistent right away instead of waiting for the next scan to prune it
+def changeCachedPaths ( cacheFilePath, cacheVersionWanted, removedPathList, renamedPathPairs ):
+    # keep a cache consistent right away instead of waiting for the next scan to prune it,
+    # renamed entries keep their value - a rename leaves the file contents and the mtime alone
     try:
-        with open(exifCachePath(), 'rb') as cacheFile:
-            cacheVersion, cachedExifDict = pickle.load(cacheFile)
-        if cacheVersion != exifCacheVersion:
+        with open(cacheFilePath, 'rb') as cacheFile:
+            cacheVersion, cachedDict = pickle.load(cacheFile)
+        if cacheVersion != cacheVersionWanted:
             return
-        removedAny = False
+        changedAny = False
         for removedPath in removedPathList:
-            if removedPath in cachedExifDict:
-                del cachedExifDict[removedPath]
-                removedAny = True
-        if removedAny:
-            with open(exifCachePath() + ".tmp", 'wb') as cacheFile:
-                pickle.dump( (exifCacheVersion, cachedExifDict), cacheFile )
-            os.replace(exifCachePath() + ".tmp", exifCachePath())
+            if removedPath in cachedDict:
+                del cachedDict[removedPath]
+                changedAny = True
+        for renamedPathPair in renamedPathPairs:
+            if renamedPathPair[0] in cachedDict:
+                cachedDict[renamedPathPair[1]] = cachedDict.pop(renamedPathPair[0])
+                changedAny = True
+        if changedAny:
+            with open(cacheFilePath + ".tmp", 'wb') as cacheFile:
+                pickle.dump( (cacheVersionWanted, cachedDict), cacheFile )
+            os.replace(cacheFilePath + ".tmp", cacheFilePath)
     except: # missing or unreadable cache -> nothing to clean up here
         pass
+
+
+def removeFromExifCache ( removedPathList ):
+    changeCachedPaths( exifCachePath(), exifCacheVersion, removedPathList, [] )
 
 
 def deleteFilesFunction ( deletePathArray ):
@@ -798,9 +808,32 @@ def checkFileExistence( inWhichTable, filePath ):
 
 
 
-def renameOriginalFunction ( currentPath, newPath ) :
-    os.rename("/" + currentPath, "/" + newPath)
-    pyotherside.send('finishedRenaming', newPath)
+def renameImageFile ( oldPath, targetStorageMedia, targetFolder, newFileName ):
+    # renames in place when the current directory was chosen, otherwise moves the file along
+    try:
+        if "$CURRENT" in targetStorageMedia:
+            targetDir = os.path.dirname(oldPath)
+        elif "$HOME" in targetStorageMedia:
+            targetDir = str(Path.home()) + targetFolder
+        else:
+            targetDir = str((glob.glob("/run/media/*/*"))[int(targetStorageMedia)-1]) + targetFolder
+        newPath = targetDir + "/" + newFileName
+
+        if newPath == oldPath: # nothing to do, but QML still gets its answer
+            pyotherside.send('returnRenamedFile', oldPath, oldPath, "")
+            return
+        if os.path.exists(newPath): # never overwrite anything
+            pyotherside.send('returnRenamedFile', oldPath, "", "exists")
+            return
+
+        shutil.move(oldPath, newPath) # os.rename alone cannot cross filesystems, eg. onto an sd card
+
+        # the caches are keyed by path, move the entries over instead of losing them
+        changeCachedPaths( exifCachePath(), exifCacheVersion, [], [ (oldPath, newPath) ] )
+        changeCachedPaths( dHashCachePath(), dHashCacheVersion, [], [ (oldPath, newPath) ] )
+        pyotherside.send('returnRenamedFile', oldPath, newPath, "")
+    except: # nothing was changed that QML needs to know about
+        pyotherside.send('returnRenamedFile', oldPath, "", "failed")
 
 
 def checkCMDexistance ( command ) :

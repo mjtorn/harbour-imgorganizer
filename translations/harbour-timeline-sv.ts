@@ -47,6 +47,10 @@
         <translation>Uppdatera dubbletter</translation>
     </message>
     <message>
+        <source>Rename</source>
+        <translation>Byt namn</translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation>Visa alla</translation>
     </message>
@@ -141,6 +145,17 @@
     </message>
 </context>
 <context>
+    <name>BannerRenameFile</name>
+    <message>
+        <source>file name</source>
+        <translation>Filnamn</translation>
+    </message>
+    <message>
+        <source>Current directory</source>
+        <translation>Aktuell katalog</translation>
+    </message>
+</context>
+<context>
     <name>BannerResize</name>
     <message>
         <source>width</source>
@@ -209,6 +224,14 @@
     <message>
         <source>GIF created</source>
         <translation>GIF skapad</translation>
+    </message>
+    <message>
+        <source>Name already taken</source>
+        <translation>Namnet är upptaget</translation>
+    </message>
+    <message>
+        <source>Rename failed</source>
+        <translation>Namnbytet misslyckades</translation>
     </message>
     <message>
         <source>GIF creation failed</source>

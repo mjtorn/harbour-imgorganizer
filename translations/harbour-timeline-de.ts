@@ -47,6 +47,10 @@
         <translation>Duplikate aktualisieren</translation>
     </message>
     <message>
+        <source>Rename</source>
+        <translation>Umbenennen</translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation>Alle anzeigen</translation>
     </message>
@@ -138,6 +142,17 @@
     <message>
         <source>new</source>
         <translation>neu</translation>
+    </message>
+</context>
+<context>
+    <name>BannerRenameFile</name>
+    <message>
+        <source>file name</source>
+        <translation>Dateiname</translation>
+    </message>
+    <message>
+        <source>Current directory</source>
+        <translation>Aktuelles Verzeichnis</translation>
     </message>
 </context>
 <context>
@@ -265,6 +280,14 @@
     <message>
         <source>GIF created</source>
         <translation>GIF erstellt</translation>
+    </message>
+    <message>
+        <source>Name already taken</source>
+        <translation>Name bereits vergeben</translation>
+    </message>
+    <message>
+        <source>Rename failed</source>
+        <translation>Umbenennen fehlgeschlagen</translation>
     </message>
     <message>
         <source>GIF creation failed</source>

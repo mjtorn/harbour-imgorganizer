@@ -43,6 +43,9 @@ Page {
     property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
     property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
     property int albumAssignmentCounter : 0 // bumped after an album was set from the viewer, an open viewer reacts to the change
+    property string lastRenamedOldPath : "" // an open viewer follows a renamed file through these
+    property string lastRenamedNewPath : ""
+    property int fileRenameCounter : 0
     property bool albumAssignmentLeftTheView : false // the image left the album filter or the album page being browsed
     property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
     property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
@@ -155,6 +158,9 @@ Page {
     }
     BannerGif {
         id: bannerGif
+    }
+    BannerRenameFile {
+        id: bannerRenameFile
     }
     ListModel {
         id: idListModelImages
@@ -402,9 +408,6 @@ Page {
                 })
                 //console.log(availableExifInfosList)
             });
-            setHandler('finishedRenaming', function( newPath ) {
-                console.log( newPath )
-            });
             setHandler('removeEntryFromDB', function( inWhichTable, filePath ) {
                 if (inWhichTable === "inAlbumTable") {
                     storageItem.removeAlbum(filePath)
@@ -496,6 +499,21 @@ Page {
                     getImagesInAlbum( standardDuplicatesAlbum )
                 }
                 finishedLoading = true
+            });
+            setHandler('returnRenamedFile', function(oldPath, newPath, errorReason) {
+                if (errorReason !== "") { // nothing was renamed, the original keeps its name
+                    lastNotifiedImagePath = ""
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = (errorReason === "exists") ? qsTr("Name already taken") : qsTr("Rename failed")
+                    idNotificationEditSaved.previewBody = ""
+                    idNotificationEditSaved.publish()
+                }
+                else {
+                    renameFileInAllLists( oldPath, newPath )
+                }
             });
             setHandler('gifCreated', function(gifPath) {
                 if (gifPath === "") { // failed, nothing was created and no source image was touched
@@ -663,10 +681,8 @@ Page {
         function createAnimatedGif( gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ) {
             call("timelinex.createAnimatedGif", [ gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ])
         }
-        function renameOriginalFunction( currentPath ) {
-            //var currentPath = "/" + origImageFilePath.replace(/^(file:\/{3})|(qrc:\/{2})|(http:\/{2})/,"")
-            //var newPath = "some_path.new"
-            //call("graphx.renameOriginalFunction", [ currentPath, newPath ])
+        function renameImageFile( oldPath, targetStorageMedia, targetFolder, newFileName ) {
+            call("timelinex.renameImageFile", [ oldPath, targetStorageMedia, targetFolder, newFileName ])
         }
         function checkDB_fileExistance() {
             // clear empty entries from "album" table
@@ -1007,6 +1023,14 @@ Page {
                                     chosenFilesArray.push(filePath)
                                 }
                                 removeFile( chosenFilesArray )
+                            }
+                        }
+                        MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
+                            text: qsTr("Rename")
+                            onClicked: {
+                                bannerRenameFile.notify( filePath, fileName )
                             }
                         }
                         MenuItem {
@@ -2472,6 +2496,68 @@ Page {
         getImagesInFolder( currentFolder )
         currentFolderAlbumFilter = albumName
         applyFolderAlbumFilter()
+    }
+
+    function renameFileInAllLists( oldPath, newPath ) {
+        if (oldPath === newPath) { return }
+        var newFileName = newPath.substring(newPath.lastIndexOf("/") + 1)
+        var newFolderPath = newPath.substring(0, newPath.lastIndexOf("/") + 1)
+
+        // both DB tables are keyed by the path, move the rows over or the image loses its album and its star
+        var storedAlbum = storageItem.getAlbum(oldPath, "")
+        storageItem.removeAlbum(oldPath)
+        if (storedAlbum !== "") {
+            storageItem.addAlbum(newPath, storedAlbum)
+        }
+        var storedKeyword = storageItem.getKeywords(oldPath, "")
+        storageItem.removeKeywords(oldPath)
+        if (storedKeyword !== "") {
+            storageItem.addKeywords(newPath, storedKeyword)
+        }
+
+        // every model carrying image roles
+        var pathCarryingModels = [ idListModelImages, idListModelImagesAlbum, idListModelImagesFolder, idListModelSearch,
+                                   idListModelFavourites, idListModelTimelineFiltered, idListModelDuplicates ]
+        for (var m = 0; m < pathCarryingModels.length; m++) {
+            for (var i = 0; i < pathCarryingModels[m].count; i++) {
+                if (pathCarryingModels[m].get(i).filePath === oldPath) {
+                    pathCarryingModels[m].setProperty(i, "filePath", newPath)
+                    pathCarryingModels[m].setProperty(i, "fileName", newFileName)
+                    pathCarryingModels[m].setProperty(i, "folderPath", newFolderPath)
+                }
+            }
+        }
+
+        // moving the file to another folder takes it out of the folder view being browsed
+        if ((currentFolder !== "") && (newFolderPath !== currentFolder)) {
+            for (i = idListModelImagesFolder.count -1; i >= 0; --i) {
+                if (idListModelImagesFolder.get(i).filePath === newPath) {
+                    idListModelImagesFolder.remove(i)
+                }
+            }
+        }
+
+        // global image references, the slideshow path is sometimes stored in url form
+        if (coverImagePath === oldPath) { coverImagePath = newPath }
+        if (lastEditedImagePath === oldPath) { lastEditedImagePath = newPath }
+        if (lastNotifiedImagePath === oldPath) { lastNotifiedImagePath = newPath }
+        if (currentSlideshowImagePath === oldPath) { currentSlideshowImagePath = newPath }
+        else if (currentSlideshowImagePath === "file://" + oldPath) { currentSlideshowImagePath = "file://" + newPath }
+        for (i = 0; i < previousRandomImagesAlbumArray.length; i++) {
+            if (previousRandomImagesAlbumArray[i] === oldPath) {
+                previousRandomImagesAlbumArray[i] = newPath
+            }
+        }
+
+        // album and folder covers are path-derived, and a move changes the folder counts
+        countDistinctAlbums()
+        countDistinctFolders()
+        randomizeDistinctFoldersArray()
+
+        // an open viewer follows the file under its new name
+        lastRenamedOldPath = oldPath
+        lastRenamedNewPath = newPath
+        fileRenameCounter = fileRenameCounter + 1
     }
 
     function setAlbumInAllModels( targetPath, targetAlbumName ) {
