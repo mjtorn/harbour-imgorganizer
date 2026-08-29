@@ -10,7 +10,7 @@ Name:       harbour-timeline
 %define __provides_exclude_from ^%{_datadir}/.*$
 
 Summary:    ImgOrganizer
-Version:    0.6
+Version:    1.0
 Release:    5
 Group:      Qt/Qt
 License:    GPL-3.0-only
