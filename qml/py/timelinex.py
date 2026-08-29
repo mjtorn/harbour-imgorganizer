@@ -102,8 +102,11 @@ def bool_canSaveWithIPTC( filePath ):
 def createAnimatedGif ( gifPathList, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ):
     # canvas is the largest frame, smaller frames get scaled up to fit and centered - the source images are only ever read
     try:
-        # resolve the chosen scan folder the same way scanForImages does
-        if "$HOME" in targetStorageMedia:
+        # resolve the chosen scan folder the same way scanForImages does, except for a folder one of
+        # the frames came from, which arrives as the absolute path it already is
+        if "$CURRENT" in targetStorageMedia:
+            targetPath = targetFolder + "/" + gifFileName
+        elif "$HOME" in targetStorageMedia:
             targetPath = str(Path.home()) + targetFolder + "/" + gifFileName
         else:
             targetPath = str((glob.glob("/run/media/*/*"))[int(targetStorageMedia)-1]) + targetFolder + "/" + gifFileName
