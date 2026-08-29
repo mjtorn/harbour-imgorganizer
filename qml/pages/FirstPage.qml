@@ -388,9 +388,6 @@ Page {
                     runDuplicateSearch()
                 }
             });
-            setHandler('goToDateIndex', function( targetListIndex ) {
-                idListViewTimeline.positionViewAtIndex( targetListIndex, ListView.Center)
-            });
             setHandler('returnEXIFinfoList', function( exifInfoList, availableExifInfosList, filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ) {
                 pageStack.animatorPush(fileDetailPage, {
                                            exifList : exifInfoList,
@@ -670,18 +667,6 @@ Page {
         function getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite) {
             call("timelinex.getEXIFdata", [ filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ])
         }
-        function findClosestDate( targetDate ) {
-            var datesItems = []
-            for (var k = 0; k < idListModelImages.count; k++) {
-                //console.log(idListModelImages.get(k).creationDateMS)
-                datesItems.push(idListModelImages.get(k).creationDateMS)
-            }
-            var thisDateLocale = new Date(targetDate).toLocaleDateString(Qt.locale("de_DE"), "dd. MMMM yyyy") // weekday "dddd"
-            var thisDateMS = new Date(targetDate).getTime() / 1000
-            //console.log(thisDateLocale)
-            //console.log(thisDateMS)
-            call("timelinex.findClosestDate", [datesItems, thisDateMS])
-        }
         function deleteFilesFunction( deletePathArray ) {
             call("timelinex.deleteFilesFunction", [ deletePathArray ])
         }
@@ -824,7 +809,7 @@ Page {
                     onClicked: {
                         var dialog = pageStack.push(datePickerComponent, { })
                         dialog.accepted.connect( function () {
-                            py.findClosestDate(dialog.date)
+                            jumpToDate(dialog.date)
                         } )
                     }
                 }
@@ -2435,6 +2420,34 @@ Page {
         if (viewIndex < 0 || viewIndex >= viewOrder.length) { return } // no wrap around, settings only opens by tapping its button
         currentView = viewOrder[viewIndex]
         storageItem.setSetting("infoCurrentView", currentView)
+    }
+
+    function jumpToDate( targetDate ) {
+        // whatever the timeline is showing is what gets searched, filtered or not - asking python for
+        // an index into the full list and then using it on a filtered view landed anywhere at all.
+        // creationDateMS holds seconds despite its name, the whole app treats it that way
+        var visibleModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+        if (visibleModel.count < 1) { return }
+        var dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime() / 1000
+        var dayEnd = dayStart + 24*60*60
+        var bestIndex = -1
+        var bestDistance = -1
+        for (var i = 0; i < visibleModel.count; i++) {
+            var imageSeconds = visibleModel.get(i).creationDateMS
+            if (imageSeconds >= dayStart && imageSeconds < dayEnd) {
+                bestIndex = i // a picture from that very day, nothing beats it
+                break
+            }
+            // nothing from that day so far, so remember the picture closest to it in either direction
+            var distance = (imageSeconds < dayStart) ? (dayStart - imageSeconds) : (imageSeconds - dayEnd)
+            if (bestDistance < 0 || distance < bestDistance) {
+                bestDistance = distance
+                bestIndex = i
+            }
+        }
+        if (bestIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( bestIndex, ListView.Center )
+        }
     }
 
     function centeredTimelineIndex() {

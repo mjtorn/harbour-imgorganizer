@@ -744,15 +744,6 @@ def scan4exifInfo(filePath, creationModificationDate, findExifAlbum, statResult,
 
 
 
-def findClosestDate ( datesItems, targetDate ):
-    if targetDate in datesItems:
-        closestDate = targetDate
-    else:
-        closestDate = min(datesItems, key=lambda x: abs(x - targetDate))
-    closestIndex = datesItems.index(closestDate)
-    pyotherside.send('goToDateIndex', closestIndex)
-
-
 def getEXIFdata ( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ):
     iptc_keywords = []
     exifInfoList = []
