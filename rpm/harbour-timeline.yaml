@@ -34,6 +34,7 @@ Requires:
   - sailfish-version >= 4.2
   - python3-imaging
   - nemo-qml-plugin-notifications-qt5
+  - nemo-qml-plugin-dbus-qt5
 
 Macros:
   - __provides_exclude_from;^%{_datadir}/.*$

@@ -40,7 +40,25 @@ Page {
     property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
     property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
     property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
-    property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded in the album tree
+    property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
+    property int albumAssignmentCounter : 0 // bumped after an album was set from the viewer, an open viewer reacts to the change
+    property string lastRenamedOldPath : "" // an open viewer follows a renamed file through these
+    property string lastRenamedNewPath : ""
+    property int fileRenameCounter : 0
+    property bool albumAssignmentLeftTheView : false // the image left the album filter or the album page being browsed
+    property int imageInspectionCounter : 0 // bumped when a finding arrived, the viewer reacts to the change
+    property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
+    property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
+
+    Connections {
+        // a counter avoids resetting the source inside its own change handler, which is a binding loop
+        target: idApplicationWindow
+        onNotificationTapCounterChanged: {
+            if (lastNotifiedImagePath !== "") {
+                showImageInTimeline( lastNotifiedImagePath )
+            }
+        }
+    }
     property string timelineSortDirection : "0" // mirrors infoTimeLineDirectionIndex, "0" = newest first
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
@@ -138,6 +156,12 @@ Page {
     BannerResize {
         id: bannerResize
     }
+    BannerGif {
+        id: bannerGif
+    }
+    BannerRenameFile {
+        id: bannerRenameFile
+    }
     ListModel {
         id: idListModelImages
     }
@@ -199,8 +223,16 @@ Page {
     }
     Notification {
         id: idNotificationEditSaved
-        isTransient: true
+        isTransient: true // the gif-created publish flips this off so its notification stays tappable in the events view
         urgency: Notification.Low
+        // tapping the notification is a dbus remote action, the call lands in the DBusAdaptor in harbour-timeline.qml
+        remoteActions: [ {
+            "name": "default",
+            "service": "harbour.timeline",
+            "path": "/harbour/timeline",
+            "iface": "harbour.timeline",
+            "method": "openNotifiedImage"
+        } ]
     }
     ListModel {
         id: idListModelDuplicates
@@ -325,6 +357,9 @@ Page {
                     }
                 }
 
+                // duplicates results survive the rescan, drop vanished files and refresh the stored positions first
+                remapBaseIndexes()
+
                 // re-count items still left, search results should be kept
                 countDistinctAlbums()
                 countDistinctFolders()
@@ -339,9 +374,19 @@ Page {
                 dbFavouritesArray = []
                 dbPathAlbumsArray = []
                 finishedLoading = true //done creating list models
-            });
-            setHandler('goToDateIndex', function( targetListIndex ) {
-                idListViewTimeline.positionViewAtIndex( targetListIndex, ListView.Center)
+
+                // a notification tap may have arrived while this scan was still running
+                if (pendingTimelineJumpPath !== "") {
+                    var retryJumpPath = pendingTimelineJumpPath
+                    pendingTimelineJumpPath = ""
+                    showImageInTimeline( retryJumpPath )
+                }
+
+                // "Refresh duplicates" wants the duplicate search run against the fresh scan
+                if (pendingDuplicateSearch === true) {
+                    pendingDuplicateSearch = false
+                    runDuplicateSearch()
+                }
             });
             setHandler('returnEXIFinfoList', function( exifInfoList, availableExifInfosList, filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ) {
                 pageStack.animatorPush(fileDetailPage, {
@@ -359,9 +404,6 @@ Page {
                                            isFavourite : isFavourite
                 })
                 //console.log(availableExifInfosList)
-            });
-            setHandler('finishedRenaming', function( newPath ) {
-                console.log( newPath )
             });
             setHandler('removeEntryFromDB', function( inWhichTable, filePath ) {
                 if (inWhichTable === "inAlbumTable") {
@@ -416,7 +458,7 @@ Page {
                 }
                 removeDeletedFilesFromLists(deletedPathArray)
             });
-            setHandler('returnDuplicateImages', function(duplicateGroups) {
+            setHandler('returnDuplicateImages', function(duplicateGroups, distanceFromReference) {
                 idListModelDuplicates.clear()
                 var pathIndexMap = ({})
                 for (var i = 0; i < idListModelImages.count; i++) {
@@ -441,16 +483,81 @@ Page {
                                 "isSearchResult" : false,
                                 "timestampSource" : imageItem.timestampSource,
                                 "isFavourite" : imageItem.isFavourite,
-                                "listModelImages_baseIndex" : baseIndex
+                                "listModelImages_baseIndex" : baseIndex,
+                                "duplicateGroup" : g,
+                                "duplicateDistance" : (distanceFromReference[duplicateGroups[g][m]] !== undefined) ? distanceFromReference[duplicateGroups[g][m]] : -1
                             })
                         }
                     }
                 }
+                dropLonelyDuplicateGroups() // a member may not be in the main list at all
                 countDistinctAlbums()
+                // an open DUPLICATES album page shows idListModelImagesAlbum, re-fill it with the fresh results
+                if (currentAlbum === standardDuplicatesAlbum) {
+                    getImagesInAlbum( standardDuplicatesAlbum )
+                }
                 finishedLoading = true
+            });
+            setHandler('imageFileInspected', function(filePath, reason, realKind, suggestedName, fileSize) {
+                var updatedFindings = ({})
+                for (var knownPath in inspectedImageFiles) {
+                    updatedFindings[knownPath] = inspectedImageFiles[knownPath]
+                }
+                updatedFindings[filePath] = { "reason" : reason, "realKind" : realKind, "suggestedName" : suggestedName, "fileSize" : fileSize }
+                inspectedImageFiles = updatedFindings // a fresh object, so anything bound to it re-evaluates
+                imageInspectionCounter = imageInspectionCounter + 1 // a counter, never a bool reset in its own handler
+            });
+            setHandler('returnRenamedFile', function(oldPath, newPath, errorReason) {
+                if (errorReason !== "") { // nothing was renamed, the original keeps its name
+                    lastNotifiedImagePath = ""
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = (errorReason === "exists") ? qsTr("Name already taken") : qsTr("Rename failed")
+                    idNotificationEditSaved.previewBody = ""
+                    idNotificationEditSaved.publish()
+                }
+                else {
+                    renameFileInAllLists( oldPath, newPath )
+                }
+            });
+            setHandler('gifCreated', function(gifPath) {
+                if (gifPath === "") { // failed, nothing was created and no source image was touched
+                    finishedLoading = true
+                    lastNotifiedImagePath = ""
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = qsTr("GIF creation failed")
+                    idNotificationEditSaved.previewBody = ""
+                    idNotificationEditSaved.publish()
+                }
+                else {
+                    if (pendingGifAlbum !== "") {
+                        storageItem.addAlbum(gifPath, pendingGifAlbum)
+                    }
+                    pendingGifAlbum = ""
+                    lastNotifiedImagePath = gifPath
+                    idNotificationEditSaved.isTransient = false // stays in the events view, tapping it jumps to the gif
+                    idNotificationEditSaved.urgency = Notification.Normal // low urgency would not show a banner for a non-transient notification
+                    idNotificationEditSaved.summary = qsTr("GIF created")
+                    idNotificationEditSaved.body = gifPath.split("/").pop()
+                    idNotificationEditSaved.previewSummary = qsTr("GIF created")
+                    idNotificationEditSaved.previewBody = gifPath.split("/").pop()
+                    idNotificationEditSaved.publish()
+                    clearAllLists()
+                    py.scanForImages()
+                }
             });
             setHandler('editedImageSaved', function(copyPath) {
                 lastEditedImagePath = copyPath
+                lastNotifiedImagePath = ""
+                idNotificationEditSaved.isTransient = true
+                idNotificationEditSaved.urgency = Notification.Low
+                idNotificationEditSaved.summary = ""
+                idNotificationEditSaved.body = ""
                 idNotificationEditSaved.previewSummary = qsTr("Saved as new copy")
                 idNotificationEditSaved.previewBody = copyPath.split("/").pop()
                 idNotificationEditSaved.publish()
@@ -560,28 +667,20 @@ Page {
         function getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite) {
             call("timelinex.getEXIFdata", [ filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ])
         }
-        function findClosestDate( targetDate ) {
-            var datesItems = []
-            for (var k = 0; k < idListModelImages.count; k++) {
-                //console.log(idListModelImages.get(k).creationDateMS)
-                datesItems.push(idListModelImages.get(k).creationDateMS)
-            }
-            var thisDateLocale = new Date(targetDate).toLocaleDateString(Qt.locale("de_DE"), "dd. MMMM yyyy") // weekday "dddd"
-            var thisDateMS = new Date(targetDate).getTime() / 1000
-            //console.log(thisDateLocale)
-            //console.log(thisDateMS)
-            call("timelinex.findClosestDate", [datesItems, thisDateMS])
-        }
         function deleteFilesFunction( deletePathArray ) {
             call("timelinex.deleteFilesFunction", [ deletePathArray ])
         }
         function findDuplicateImages( allPathsArray, tolerance ) {
             call("timelinex.findDuplicateImages", [ allPathsArray, tolerance ])
         }
-        function renameOriginalFunction( currentPath ) {
-            //var currentPath = "/" + origImageFilePath.replace(/^(file:\/{3})|(qrc:\/{2})|(http:\/{2})/,"")
-            //var newPath = "some_path.new"
-            //call("graphx.renameOriginalFunction", [ currentPath, newPath ])
+        function createAnimatedGif( gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ) {
+            call("timelinex.createAnimatedGif", [ gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ])
+        }
+        function inspectImageFile( filePath, deepCheck ) {
+            call("timelinex.inspectImageFile", [ filePath, deepCheck ])
+        }
+        function renameImageFile( oldPath, targetStorageMedia, targetFolder, newFileName ) {
+            call("timelinex.renameImageFile", [ oldPath, targetStorageMedia, targetFolder, newFileName ])
         }
         function checkDB_fileExistance() {
             // clear empty entries from "album" table
@@ -630,7 +729,19 @@ Page {
         }
 
         onError: {
-            //console.log('python error: ' + traceback) //when an exception is raised, this error handler will be called
+            // a python exception used to vanish here, leaving every busy indicator spinning for ever
+            // because the flags are only ever cleared by the handler of a result that never arrives
+            console.log('python error: ' + traceback)
+            finishedLoading = true
+            refreshingExifCache = false
+            // the notification object is shared, so set every field before publishing
+            idNotificationEditSaved.isTransient = true
+            idNotificationEditSaved.urgency = Notification.Low
+            idNotificationEditSaved.summary = ""
+            idNotificationEditSaved.body = ""
+            idNotificationEditSaved.previewSummary = qsTr("That did not work")
+            idNotificationEditSaved.previewBody = ""
+            idNotificationEditSaved.publish()
         }
         onReceived: {
             //console.log('got message from python: ' + data) //asychronous messages from Python arrive here; done there via pyotherside.send()
@@ -698,7 +809,7 @@ Page {
                     onClicked: {
                         var dialog = pageStack.push(datePickerComponent, { })
                         dialog.accepted.connect( function () {
-                            py.findClosestDate(dialog.date)
+                            jumpToDate(dialog.date)
                         } )
                     }
                 }
@@ -795,8 +906,9 @@ Page {
 
                 menu: Component {
                     ContextMenu {
-                        hasContent: (multiSelectActive !== true) || (multiSelectActive === true && timelineSelectedTotal !== 0)
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Set Album")
                             onClicked: {
                                 var chosenFilesArray = []
@@ -821,6 +933,8 @@ Page {
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: (isFavourite !== "true") ? qsTr("Set Favourite") : qsTr("From Favourite")
                             onClicked: {
                                 // only use isFavourite info from the item currently touched
@@ -860,6 +974,8 @@ Page {
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Share")
                             ShareAction {
                                 id: shareAction
@@ -883,6 +999,25 @@ Page {
                             }
                         }
                         MenuItem {
+                            enabled: pillowAvailable && multiSelectActive && timelineSelectedTotal > 1
+                            visible: enabled
+                            text: qsTr("Create animated gif")
+                            onClicked: {
+                                var gifPathsArray = []
+                                var gifAlbumsArray = []
+                                var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                for (var j = 0; j < activeTimelineModel.count; j++) {
+                                    if (activeTimelineModel.get(j).selected === true) {
+                                        gifPathsArray.push(activeTimelineModel.get(j).filePath)
+                                        gifAlbumsArray.push(activeTimelineModel.get(j).album)
+                                    }
+                                }
+                                bannerGif.notify( gifPathsArray, decideGifAlbum(gifAlbumsArray) )
+                            }
+                        }
+                        MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Delete")
                             onClicked: {
                                 var chosenFilesArray = []
@@ -903,6 +1038,14 @@ Page {
                         MenuItem {
                             enabled: multiSelectActive === false
                             visible: enabled
+                            text: qsTr("Rename")
+                            onClicked: {
+                                bannerRenameFile.notify( filePath, fileName )
+                            }
+                        }
+                        MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
                             text: qsTr("Info")
                             onClicked: {
                                 idImageSizeHelper.source = ""
@@ -910,6 +1053,20 @@ Page {
                                 var imageWidth = idImageSizeHelper.sourceSize.width
                                 var imageHeight = idImageSizeHelper.sourceSize.height
                                 py.getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite )
+                            }
+                        }
+                        MenuItem {
+                            text: (multiSelectActive === true) ? qsTr("Stop selecting") : qsTr("Selection")
+                            onClicked: {
+                                if (multiSelectActive === true) {
+                                    unselectAll()
+                                }
+                                else {
+                                    // start selecting right here, with the long-tapped image already selected
+                                    multiSelectActive = true
+                                    selected = true
+                                    timelineSelectedTotal = timelineSelectedTotal + 1
+                                }
                             }
                         }
                     }
@@ -942,6 +1099,27 @@ Page {
                         asynchronous: true
                         cache: false
 
+                        Image {
+                            // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                            id: idImageTimelineFallback
+                            anchors.fill: parent
+                            visible: idImageTimeline.status === Image.Error
+                            source: (idImageTimeline.status === Image.Error) ? filePath : ""
+                            sourceSize.width: parent.width
+                            sourceSize.height: parent.height
+                            autoTransform: true
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                        }
+                        Icon {
+                            // nothing could be decoded at all, a marker beats an empty square - opening it explains why
+                            visible: idImageTimelineFallback.status === Image.Error
+                            anchors.centerIn: parent
+                            width: parent.width / 3
+                            height: width
+                            source: "image://theme/icon-m-image?"
+                        }
                         Rectangle {
                             id: idBackHighlightTimeline
                             visible: selected
@@ -1027,6 +1205,14 @@ Page {
                 quickSelect: true
                 enabled: finishedLoading === true
 
+                MenuItem {
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, same as the timeline and folder views offer
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
                 MenuItem {
                     text: qsTr("Find duplicates")
                     onClicked: {
@@ -1153,6 +1339,19 @@ Page {
                         fillMode: Image.PreserveAspectCrop
                         source: ((random_image !== undefined) && (random_image !== "") ) ? ("image://nemoThumbnail/" + random_image) : ""
                         //onSourceChanged: opacityAlbumImage.start()
+
+                        Image {
+                            // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                            anchors.fill: parent
+                            visible: idCoverAlbum.status === Image.Error
+                            source: (idCoverAlbum.status === Image.Error) ? random_image : ""
+                            sourceSize.width: parent.width
+                            sourceSize.height: parent.height
+                            autoTransform: true
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                        }
                     }
                     Image {
                         visible: infoActivateCoverImages !== 0 && finishedLoading
@@ -1376,6 +1575,19 @@ Page {
                             fillMode: Image.PreserveAspectCrop
                             source: ((random_image !== undefined) && (random_image !== "") ) ? ("image://nemoThumbnail/" + random_image) : ""
                             onSourceChanged: opacityFolderImage.start()
+
+                            Image {
+                                // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                                anchors.fill: parent
+                                visible: idCoverFolder.status === Image.Error
+                                source: (idCoverFolder.status === Image.Error) ? random_image : ""
+                                sourceSize.width: parent.width
+                                sourceSize.height: parent.height
+                                autoTransform: true
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: false
+                            }
                         }
                         Image {
                             visible: infoActivateCoverImages !== 0 && finishedLoading
@@ -1583,7 +1795,7 @@ Page {
         idListModelSearch.clear()
         idListModelFavourites.clear()
         idListModelTimelineFiltered.clear()
-        idListModelDuplicates.clear()
+        // idListModelDuplicates is kept: the results are not derivable from a rescan, stale rows get pruned and re-mapped afterwards
         timelineAlbumFilter = ""
     }
 
@@ -1825,7 +2037,9 @@ Page {
                         "isSearchResult" : false,
                         "timestampSource" : idListModelImages.get(i).timestampSource,
                         "isFavourite" : idListModelImages.get(i).isFavourite,
-                        "listModelImages_baseIndex" : i
+                        "listModelImages_baseIndex" : i,
+                        "duplicateGroup" : -1,
+                        "duplicateDistance" : -1
                     })
                 }
             }
@@ -1847,7 +2061,9 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelDuplicates.get(i).timestampSource,
                     "isFavourite" : idListModelDuplicates.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelDuplicates.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelDuplicates.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : idListModelDuplicates.get(i).duplicateGroup,
+                    "duplicateDistance" : idListModelDuplicates.get(i).duplicateDistance
                 })
             }
         }
@@ -1869,7 +2085,9 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelFavourites.get(i).timestampSource,
                     "isFavourite" : idListModelFavourites.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelFavourites.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelFavourites.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -1891,7 +2109,9 @@ Page {
                     "isSearchResult" : idListModelSearch.get(i).isSearchResult,
                     "timestampSource" : idListModelSearch.get(i).timestampSource,
                     "isFavourite" : idListModelSearch.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelSearch.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelSearch.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -2014,9 +2234,45 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelImages.get(i).timestampSource,
                     "isFavourite" : idListModelImages.get(i).isFavourite,
-                    "listModelImages_baseIndex" : i
+                    "listModelImages_baseIndex" : i,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
+        }
+    }
+
+    function dropLonelyDuplicateGroups() {
+        // a group whose partners got deleted, renamed away or dropped out of the scan must not
+        // linger as a single image - being alone in DUPLICATES means nothing was duplicated
+        var membersPerGroup = ({})
+        for (var i = 0; i < idListModelDuplicates.count; i++) {
+            var groupNumber = idListModelDuplicates.get(i).duplicateGroup
+            membersPerGroup[groupNumber] = (membersPerGroup[groupNumber] === undefined) ? 1 : membersPerGroup[groupNumber] + 1
+        }
+        var droppedAny = false
+        for (i = idListModelDuplicates.count -1; i >= 0; --i) {
+            if (membersPerGroup[idListModelDuplicates.get(i).duplicateGroup] < 2) {
+                idListModelDuplicates.remove(i)
+                droppedAny = true
+            }
+        }
+        // renumber what is left, a gap in the group numbers would only make the user wonder
+        var newNumberForGroup = ({})
+        var nextGroupNumber = 0
+        for (i = 0; i < idListModelDuplicates.count; i++) {
+            var oldNumber = idListModelDuplicates.get(i).duplicateGroup
+            if (newNumberForGroup[oldNumber] === undefined) {
+                newNumberForGroup[oldNumber] = nextGroupNumber
+                nextGroupNumber = nextGroupNumber + 1
+            }
+            if (newNumberForGroup[oldNumber] !== oldNumber) {
+                idListModelDuplicates.setProperty(i, "duplicateGroup", newNumberForGroup[oldNumber])
+            }
+        }
+        // the survivor was not deleted, so nothing else would take its copy out of an open duplicates page
+        if (droppedAny === true && currentAlbum === standardDuplicatesAlbum) {
+            getImagesInAlbum( standardDuplicatesAlbum )
         }
     }
 
@@ -2030,17 +2286,31 @@ Page {
             idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
         }
         for (l = 0; l < idListModelTimelineFiltered.count; l++) {
-            idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
+            if (pathIndexMap[idListModelTimelineFiltered.get(l).filePath] !== undefined) {
+                idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
+            }
         }
-        for (l = 0; l < idListModelDuplicates.count; l++) {
-            idListModelDuplicates.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelDuplicates.get(l).filePath])
+        // the duplicates results outlive rescans, rows of vanished files get dropped here
+        for (l = idListModelDuplicates.count -1; l >= 0; --l) {
+            if (pathIndexMap[idListModelDuplicates.get(l).filePath] === undefined) {
+                idListModelDuplicates.remove(l)
+            }
+            else {
+                idListModelDuplicates.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelDuplicates.get(l).filePath])
+            }
         }
         for (var k = 0; k < idListModelImagesAlbum.count; k++) {
-            idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+            if (pathIndexMap[idListModelImagesAlbum.get(k).filePath] !== undefined) {
+                idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+            }
         }
         for (var o = 0; o < idListModelImagesFolder.count; o++) {
-            idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+            if (pathIndexMap[idListModelImagesFolder.get(o).filePath] !== undefined) {
+                idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+            }
         }
+
+        dropLonelyDuplicateGroups() // pruning above may have left a group with a single member
     }
 
     function runDuplicateSearch() {
@@ -2050,13 +2320,96 @@ Page {
             allPathsArray.push(idListModelImages.get(i).filePath)
         }
         finishedLoading = false
-        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : 4 )
+        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : infoDuplicateDistance )
+    }
+
+    function toggleDuplicateTolerance() {
+        // only the setting is touched, the watchdog underneath re-groups the images - the hashes
+        // come from the cache, so switching modes costs no rehashing
+        var newTolerance = (infoDuplicateTolerance === 0) ? 1 : 0
+        var haveResultsToRebuild = (idListModelDuplicates.count > 0) // that is all the watchdog reacts to
+        storageItem.setSetting("infoDuplicateTolerance", newTolerance)
+        infoDuplicateTolerance = newTolerance
+        if (haveResultsToRebuild === false) {
+            // exact matching may have found nothing at all, switching to near must still search
+            runDuplicateSearch()
+        }
     }
 
     property var trackedDuplicateTolerance : infoDuplicateTolerance // watchdog pattern: a changed matching setting rebuilds existing results
     onTrackedDuplicateToleranceChanged: {
         if (idListModelDuplicates.count > 0) {
             runDuplicateSearch()
+        }
+    }
+
+    function setDuplicateDistance( newDistance ) {
+        // the tolerance slider in DUPLICATES, same deal as the mode toggle above
+        var haveResultsToRebuild = (idListModelDuplicates.count > 0)
+        storageItem.setSetting("infoDuplicateDistance", newDistance)
+        infoDuplicateDistance = newDistance
+        if (haveResultsToRebuild === false) {
+            runDuplicateSearch()
+        }
+    }
+
+    property var trackedDuplicateDistance : infoDuplicateDistance // watchdog pattern again, a wider or tighter tolerance regroups
+    onTrackedDuplicateDistanceChanged: {
+        if (infoDuplicateTolerance !== 0 && idListModelDuplicates.count > 0) {
+            runDuplicateSearch()
+        }
+    }
+
+    function decideGifAlbum( albumsArray ) {
+        // all frames in one album -> the gif joins it, UNSORTED entries do not break the deal
+        var targetAlbum = ""
+        for (var i = 0; i < albumsArray.length; i++) {
+            if (albumsArray[i] !== standardAlbum) {
+                if (targetAlbum === "") {
+                    targetAlbum = albumsArray[i]
+                }
+                else if (targetAlbum !== albumsArray[i]) {
+                    return ""
+                }
+            }
+        }
+        return targetAlbum
+    }
+
+    function showImageInTimeline( targetPath ) {
+        // jump to the full timeline and center the image, eg. after tapping the gif-created notification.
+        // the timeline lives on this page - a pushed album/folder/viewer page would hide the jump completely
+        var popGuard = 0
+        while (pageStack.depth > 1 && popGuard < 10) {
+            pageStack.pop(undefined, PageStackAction.Immediate)
+            popGuard += 1
+        }
+        currentView = "timeline"
+        storageItem.setSetting("infoCurrentView", "timeline")
+        timelineAlbumFilter = ""
+        idListModelTimelineFiltered.clear()
+        var foundIndex = -1
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === targetPath) {
+                foundIndex = i
+            }
+        }
+        if (foundIndex >= 0) {
+            pendingTimelineJumpPath = ""
+            idListViewTimeline.positionViewAtIndex( foundIndex, ListView.Center ) // the viewer pops back onto the right spot
+            // and open the image itself, exactly like tapping it in the timeline
+            var allCurrentModelImagePathsArray = []
+            for (i = 0; i < idListModelImages.count; i++) {
+                allCurrentModelImagePathsArray.push(idListModelImages.get(i).filePath)
+            }
+            pageStack.animatorPush(viewPage, {
+                                       upperFreeHeight : upperFreeHeight,
+                                       allCurrentModelImagePathsArray : allCurrentModelImagePathsArray,
+                                       currentImageIndex : foundIndex,
+                                   })
+        }
+        else {
+            pendingTimelineJumpPath = targetPath // probably still being scanned in, retried when the scan lands
         }
     }
 
@@ -2067,6 +2420,34 @@ Page {
         if (viewIndex < 0 || viewIndex >= viewOrder.length) { return } // no wrap around, settings only opens by tapping its button
         currentView = viewOrder[viewIndex]
         storageItem.setSetting("infoCurrentView", currentView)
+    }
+
+    function jumpToDate( targetDate ) {
+        // whatever the timeline is showing is what gets searched, filtered or not - asking python for
+        // an index into the full list and then using it on a filtered view landed anywhere at all.
+        // creationDateMS holds seconds despite its name, the whole app treats it that way
+        var visibleModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+        if (visibleModel.count < 1) { return }
+        var dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime() / 1000
+        var dayEnd = dayStart + 24*60*60
+        var bestIndex = -1
+        var bestDistance = -1
+        for (var i = 0; i < visibleModel.count; i++) {
+            var imageSeconds = visibleModel.get(i).creationDateMS
+            if (imageSeconds >= dayStart && imageSeconds < dayEnd) {
+                bestIndex = i // a picture from that very day, nothing beats it
+                break
+            }
+            // nothing from that day so far, so remember the picture closest to it in either direction
+            var distance = (imageSeconds < dayStart) ? (dayStart - imageSeconds) : (imageSeconds - dayEnd)
+            if (bestDistance < 0 || distance < bestDistance) {
+                bestDistance = distance
+                bestIndex = i
+            }
+        }
+        if (bestIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( bestIndex, ListView.Center )
+        }
     }
 
     function centeredTimelineIndex() {
@@ -2253,6 +2634,124 @@ Page {
         getImagesInFolder( currentFolder )
         currentFolderAlbumFilter = albumName
         applyFolderAlbumFilter()
+    }
+
+    function renameFileInAllLists( oldPath, newPath ) {
+        if (oldPath === newPath) { return }
+        var newFileName = newPath.substring(newPath.lastIndexOf("/") + 1)
+        var newFolderPath = newPath.substring(0, newPath.lastIndexOf("/") + 1)
+
+        // both DB tables are keyed by the path, move the rows over or the image loses its album and its star
+        var storedAlbum = storageItem.getAlbum(oldPath, "")
+        storageItem.removeAlbum(oldPath)
+        if (storedAlbum !== "") {
+            storageItem.addAlbum(newPath, storedAlbum)
+        }
+        var storedKeyword = storageItem.getKeywords(oldPath, "")
+        storageItem.removeKeywords(oldPath)
+        if (storedKeyword !== "") {
+            storageItem.addKeywords(newPath, storedKeyword)
+        }
+
+        // every model carrying image roles
+        var pathCarryingModels = [ idListModelImages, idListModelImagesAlbum, idListModelImagesFolder, idListModelSearch,
+                                   idListModelFavourites, idListModelTimelineFiltered, idListModelDuplicates ]
+        for (var m = 0; m < pathCarryingModels.length; m++) {
+            for (var i = 0; i < pathCarryingModels[m].count; i++) {
+                if (pathCarryingModels[m].get(i).filePath === oldPath) {
+                    pathCarryingModels[m].setProperty(i, "filePath", newPath)
+                    pathCarryingModels[m].setProperty(i, "fileName", newFileName)
+                    pathCarryingModels[m].setProperty(i, "folderPath", newFolderPath)
+                }
+            }
+        }
+
+        // moving the file to another folder takes it out of the folder view being browsed
+        if ((currentFolder !== "") && (newFolderPath !== currentFolder)) {
+            for (i = idListModelImagesFolder.count -1; i >= 0; --i) {
+                if (idListModelImagesFolder.get(i).filePath === newPath) {
+                    idListModelImagesFolder.remove(i)
+                }
+            }
+        }
+
+        // global image references, the slideshow path is sometimes stored in url form
+        if (coverImagePath === oldPath) { coverImagePath = newPath }
+        if (lastEditedImagePath === oldPath) { lastEditedImagePath = newPath }
+        if (lastNotifiedImagePath === oldPath) { lastNotifiedImagePath = newPath }
+        if (currentSlideshowImagePath === oldPath) { currentSlideshowImagePath = newPath }
+        else if (currentSlideshowImagePath === "file://" + oldPath) { currentSlideshowImagePath = "file://" + newPath }
+        for (i = 0; i < previousRandomImagesAlbumArray.length; i++) {
+            if (previousRandomImagesAlbumArray[i] === oldPath) {
+                previousRandomImagesAlbumArray[i] = newPath
+            }
+        }
+
+        // album and folder covers are path-derived, and a move changes the folder counts
+        countDistinctAlbums()
+        countDistinctFolders()
+        randomizeDistinctFoldersArray()
+
+        // an open viewer follows the file under its new name
+        lastRenamedOldPath = oldPath
+        lastRenamedNewPath = newPath
+        fileRenameCounter = fileRenameCounter + 1
+    }
+
+    function setAlbumInAllModels( targetPath, targetAlbumName ) {
+        // used when the album is set from the viewer, which can be reached from any of the lists
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === targetPath) {
+                idListModelImages.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelFavourites.count; i++) {
+            if (idListModelFavourites.get(i).filePath === targetPath) {
+                idListModelFavourites.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelSearch.count; i++) {
+            if (idListModelSearch.get(i).filePath === targetPath) {
+                idListModelSearch.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelImagesFolder.count; i++) {
+            if (idListModelImagesFolder.get(i).filePath === targetPath) {
+                idListModelImagesFolder.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelDuplicates.count; i++) {
+            if (idListModelDuplicates.get(i).filePath === targetPath) {
+                idListModelDuplicates.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelTimelineFiltered.count; i++) {
+            if (idListModelTimelineFiltered.get(i).filePath === targetPath) {
+                idListModelTimelineFiltered.setProperty(i, "album", targetAlbumName)
+            }
+        }
+
+        // an open album page holds one album only, the image leaves it when it moved elsewhere
+        var removedFromOpenAlbum = false
+        for (i = idListModelImagesAlbum.count -1; i >= 0; --i) {
+            if (idListModelImagesAlbum.get(i).filePath === targetPath) {
+                idListModelImagesAlbum.setProperty(i, "album", targetAlbumName)
+                if ((currentAlbum !== standardFavouritesAlbum) && (currentAlbum !== standardSearchAlbum) && (currentAlbum !== standardDuplicatesAlbum) && (targetAlbumName !== currentAlbum)) {
+                    idListModelImagesAlbum.remove(i)
+                    removedFromOpenAlbum = true
+                }
+            }
+        }
+
+        // a filtered timeline or folder view may not match the new album any more
+        applyTimelineAlbumFilter()
+        applyFolderAlbumFilter()
+
+        // an open viewer refreshes its info overlay, and closes when the image just left what is being browsed
+        albumAssignmentLeftTheView = ((timelineAlbumFilter !== "" && targetAlbumName !== timelineAlbumFilter)
+                                      || (currentFolderAlbumFilter !== "" && targetAlbumName !== currentFolderAlbumFilter)
+                                      || removedFromOpenAlbum)
+        albumAssignmentCounter = albumAssignmentCounter + 1
     }
 
     function applyFolderAlbumFilter() {

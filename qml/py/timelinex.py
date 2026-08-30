@@ -14,6 +14,7 @@ import piexif.helper
 import subprocess                   # for running shell commands as separate processes
 import zipfile                      # for sharing multiple files at once, e.g. on bluetooth
 import pickle                       # for caching exif scan results between app starts
+import shutil                       # for moving files across filesystems, e.g. onto an sd card
 try:
     import PIL
     try:
@@ -96,6 +97,65 @@ def bool_canSaveWithIPTC( filePath ):
         saveWithIPTC = False
         iptc_info = 0
     return saveWithIPTC, iptc_info
+
+
+def createAnimatedGif ( gifPathList, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ):
+    # canvas is the largest frame, smaller frames get scaled up to fit and centered - the source images are only ever read
+    try:
+        # resolve the chosen scan folder the same way scanForImages does, except for a folder one of
+        # the frames came from, which arrives as the absolute path it already is
+        if "$CURRENT" in targetStorageMedia:
+            targetPath = targetFolder + "/" + gifFileName
+        elif "$HOME" in targetStorageMedia:
+            targetPath = str(Path.home()) + targetFolder + "/" + gifFileName
+        else:
+            targetPath = str((glob.glob("/run/media/*/*"))[int(targetStorageMedia)-1]) + targetFolder + "/" + gifFileName
+
+        canvasWidth = 0
+        canvasHeight = 0
+        for filePath in gifPathList:
+            img = Image.open(filePath)
+            img = ImageOps.exif_transpose(img)
+            if img.size[0] > canvasWidth:
+                canvasWidth = img.size[0]
+            if img.size[1] > canvasHeight:
+                canvasHeight = img.size[1]
+            img.close()
+
+        # never overwrite an existing file
+        dotIndex = targetPath.rfind(".")
+        basePath = targetPath[:dotIndex]
+        extension = targetPath[dotIndex:]
+        copyNumber = 2
+        while os.path.exists(targetPath):
+            targetPath = basePath + str(copyNumber) + extension
+            copyNumber += 1
+
+        def buildGifFrame ( filePath ):
+            img = Image.open(filePath)
+            img = ImageOps.exif_transpose(img)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            scaleFactor = min(canvasWidth / img.size[0], canvasHeight / img.size[1])
+            scaledImg = img.resize( (int(img.size[0] * scaleFactor), int(img.size[1] * scaleFactor)), Image.LANCZOS )
+            frame = Image.new('RGB', (canvasWidth, canvasHeight), (0, 0, 0))
+            frame.paste( scaledImg, ( (canvasWidth - scaledImg.size[0]) // 2, (canvasHeight - scaledImg.size[1]) // 2 ) )
+            img.close()
+            return frame
+
+        # a generator keeps only one frame in memory at a time
+        def remainingGifFrames():
+            for frameNumber in range(1, len(gifPathList)):
+                pyotherside.send('scanProgress', frameNumber + 1, len(gifPathList))
+                yield buildGifFrame(gifPathList[frameNumber])
+
+        pyotherside.send('scanProgress', 1, len(gifPathList))
+        firstFrame = buildGifFrame(gifPathList[0])
+        firstFrame.save(targetPath, save_all=True, append_images=remainingGifFrames(), duration=int(frameDurationMS), loop=0)
+        firstFrame.close()
+        pyotherside.send('gifCreated', targetPath)
+    except: # anything failed -> QML shows nothing new, no source image was written to either way
+        pyotherside.send('gifCreated', "")
 
 
 def buildEditedCopyPath ( filePath ):
@@ -379,6 +439,7 @@ def buildImageDHash ( filePath ):
 
 
 def findDuplicateImages ( filePathList, tolerance ):
+    tolerance = int(tolerance) # qml hands numbers over as floats, and the chunk count below indexes with it
     # load the whole dhash cache once, any load problem -> rebuild from scratch, that keeps the cache clean
     cachedHashDict = {}
     try:
@@ -395,7 +456,8 @@ def findDuplicateImages ( filePathList, tolerance ):
     newCacheEntries = {}
     for filePath in filePathList:
         someHashCounter += 1
-        pyotherside.send('scanProgress', someHashCounter, imagesTotalAmount)
+        if someHashCounter % 25 == 0 or someHashCounter == imagesTotalAmount:
+            pyotherside.send('scanProgress', someHashCounter, imagesTotalAmount) # every file would be 24k round trips for nothing
         try:
             statResult = os.stat(filePath)
             if filePath in cachedHashDict and cachedHashDict[filePath][0] == statResult.st_mtime:
@@ -421,47 +483,93 @@ def findDuplicateImages ( filePathList, tolerance ):
         except: # e.g. read-only filesystem -> no cache this time, gets rebuilt on next run
             pass
 
-    # group the hashes, exact match via one dict, near match via 16 bit chunk buckets (pigeonhole: distance <= 3 shares a chunk, verify real distance after)
-    groupOfPath = {}
+    # group the hashes: files sharing a hash always belong together, near matching additionally
+    # buckets the distinct hashes into tolerance+1 chunks. within a distance of t at most t chunks
+    # can carry a differing bit, so at least one chunk has to be identical (pigeonhole) - with
+    # fewer chunks than that a pair sitting exactly at the tolerance is never even compared
+    pathsByHash = {}
+    for filePath in filePathList:
+        if filePath in hashByPath:
+            pathsByHash.setdefault(hashByPath[filePath], []).append(filePath)
+
     if tolerance == 0:
-        pathsByHash = {}
-        for filePath in filePathList:
-            if filePath in hashByPath:
-                pathsByHash.setdefault(hashByPath[filePath], []).append(filePath)
         duplicateGroups = [pathGroup for pathGroup in pathsByHash.values() if len(pathGroup) > 1]
     else:
+        chunkCount = tolerance + 1
+        chunkEdges = [ (chunkIndex * 64) // chunkCount for chunkIndex in range(chunkCount + 1) ]
         candidateBuckets = {}
-        for filePath in filePathList:
-            if filePath in hashByPath:
-                imageDHash = hashByPath[filePath]
-                for chunkIndex in range(4):
-                    candidateBuckets.setdefault( (chunkIndex, (imageDHash >> (chunkIndex * 16)) & 0xFFFF), []).append(filePath)
-        # union-find over verified pairs
-        parentOfPath = {}
-        pairedPathsSet = set()
-        def findRoot ( somePath ):
-            while parentOfPath.get(somePath, somePath) != somePath:
-                somePath = parentOfPath[somePath]
-            return somePath
-        for bucketPaths in candidateBuckets.values():
-            if len(bucketPaths) < 2:
-                continue
-            for i in range(len(bucketPaths)):
-                for j in range(i + 1, len(bucketPaths)):
-                    if bin(hashByPath[bucketPaths[i]] ^ hashByPath[bucketPaths[j]]).count("1") <= tolerance:
-                        pairedPathsSet.add(bucketPaths[i])
-                        pairedPathsSet.add(bucketPaths[j])
-                        rootA = findRoot(bucketPaths[i])
-                        rootB = findRoot(bucketPaths[j])
-                        if rootA != rootB:
-                            parentOfPath[rootA] = rootB
-        pathsByRoot = {}
-        for filePath in filePathList:
-            if filePath in pairedPathsSet:
-                pathsByRoot.setdefault(findRoot(filePath), []).append(filePath)
-        duplicateGroups = [pathGroup for pathGroup in pathsByRoot.values() if len(pathGroup) > 1]
+        for imageDHash in pathsByHash:
+            for chunkIndex in range(chunkCount):
+                lowBit = chunkEdges[chunkIndex]
+                chunkMask = (1 << (chunkEdges[chunkIndex + 1] - lowBit)) - 1
+                candidateBuckets.setdefault( (chunkIndex, (imageDHash >> lowBit) & chunkMask), []).append(imageDHash)
 
-    pyotherside.send('returnDuplicateImages', duplicateGroups)
+        # every verified pair, per distinct hash: a hundred copies of one image are a single hash
+        # here, not a hundred entry bucket compared against itself
+        matesOfHash = {}
+        for bucketHashes in candidateBuckets.values():
+            if len(bucketHashes) < 2:
+                continue
+            for i in range(len(bucketHashes)):
+                someHash = bucketHashes[i]
+                for j in range(i + 1, len(bucketHashes)):
+                    otherHash = bucketHashes[j]
+                    if bin(someHash ^ otherHash).count("1") <= tolerance:
+                        matesOfHash.setdefault(someHash, set()).add(otherHash)
+                        matesOfHash.setdefault(otherHash, set()).add(someHash)
+
+        # a group is a clique: every member within the tolerance of every other member, so the
+        # slider means what it says. merging every pair transitively instead would chain - two
+        # images four apart from a third but eight from each other would share a group at four -
+        # and a chain has no bound at all: at eight it grew one group of 792 images, some of them
+        # 55 bits apart. the cost of not chaining is that a hash whose only mates were claimed by
+        # earlier groups waits for a later search, once the copies around it are dealt with
+        scanOrderOfHash = {}
+        for imageDHash in pathsByHash: # insertion ordered, so this is the order the files were scanned in
+            scanOrderOfHash[imageDHash] = len(scanOrderOfHash)
+        groupedHashSet = set()
+        hashGroupList = []
+        for imageDHash in pathsByHash:
+            if imageDHash in groupedHashSet:
+                continue
+            hashGroup = [imageDHash]
+            # scan order, not set order, so the same library always groups the same way
+            for mateHash in sorted(matesOfHash.get(imageDHash, ()), key=lambda someHash: scanOrderOfHash[someHash]):
+                if mateHash in groupedHashSet:
+                    continue
+                fitsAll = True
+                for memberHash in hashGroup:
+                    if bin(mateHash ^ memberHash).count("1") > tolerance:
+                        fitsAll = False
+                        break
+                if fitsAll is True:
+                    hashGroup.append(mateHash)
+            # identical files are duplicates of each other whether or not a near neighbour turned up
+            if len(hashGroup) > 1 or len(pathsByHash[imageDHash]) > 1:
+                hashGroupList.append(hashGroup)
+                groupedHashSet.update(hashGroup)
+
+        groupIndexOfHash = {}
+        for groupIndex in range(len(hashGroupList)):
+            for imageDHash in hashGroupList[groupIndex]:
+                groupIndexOfHash[imageDHash] = groupIndex
+        pathsByGroupIndex = {}
+        for filePath in filePathList:
+            if filePath in hashByPath and hashByPath[filePath] in groupIndexOfHash:
+                pathsByGroupIndex.setdefault(groupIndexOfHash[hashByPath[filePath]], []).append(filePath)
+        duplicateGroups = [pathGroup for pathGroup in pathsByGroupIndex.values() if len(pathGroup) > 1]
+
+    # every group is measured against its own first member, -1 marks that reference image itself.
+    # near matching groups by union-find over verified pairs, so a chained member can sit further
+    # away than the tolerance - the distance is what makes that visible instead of mysterious
+    distanceFromReference = {}
+    for pathGroup in duplicateGroups:
+        referenceHash = hashByPath[pathGroup[0]]
+        distanceFromReference[pathGroup[0]] = -1
+        for filePath in pathGroup[1:]:
+            distanceFromReference[filePath] = bin(referenceHash ^ hashByPath[filePath]).count("1")
+
+    pyotherside.send('returnDuplicateImages', duplicateGroups, distanceFromReference)
 
 
 def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):
@@ -636,15 +744,6 @@ def scan4exifInfo(filePath, creationModificationDate, findExifAlbum, statResult,
 
 
 
-def findClosestDate ( datesItems, targetDate ):
-    if targetDate in datesItems:
-        closestDate = targetDate
-    else:
-        closestDate = min(datesItems, key=lambda x: abs(x - targetDate))
-    closestIndex = datesItems.index(closestDate)
-    pyotherside.send('goToDateIndex', closestIndex)
-
-
 def getEXIFdata ( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ):
     iptc_keywords = []
     exifInfoList = []
@@ -693,24 +792,33 @@ def getEXIFdata ( filePath, creationDateMS, monthYear, day, folderPath, fileName
 
 
 
-def removeFromExifCache ( removedPathList ):
-    # keep the cache consistent right away instead of waiting for the next scan to prune it
+def changeCachedPaths ( cacheFilePath, cacheVersionWanted, removedPathList, renamedPathPairs ):
+    # keep a cache consistent right away instead of waiting for the next scan to prune it,
+    # renamed entries keep their value - a rename leaves the file contents and the mtime alone
     try:
-        with open(exifCachePath(), 'rb') as cacheFile:
-            cacheVersion, cachedExifDict = pickle.load(cacheFile)
-        if cacheVersion != exifCacheVersion:
+        with open(cacheFilePath, 'rb') as cacheFile:
+            cacheVersion, cachedDict = pickle.load(cacheFile)
+        if cacheVersion != cacheVersionWanted:
             return
-        removedAny = False
+        changedAny = False
         for removedPath in removedPathList:
-            if removedPath in cachedExifDict:
-                del cachedExifDict[removedPath]
-                removedAny = True
-        if removedAny:
-            with open(exifCachePath() + ".tmp", 'wb') as cacheFile:
-                pickle.dump( (exifCacheVersion, cachedExifDict), cacheFile )
-            os.replace(exifCachePath() + ".tmp", exifCachePath())
+            if removedPath in cachedDict:
+                del cachedDict[removedPath]
+                changedAny = True
+        for renamedPathPair in renamedPathPairs:
+            if renamedPathPair[0] in cachedDict:
+                cachedDict[renamedPathPair[1]] = cachedDict.pop(renamedPathPair[0])
+                changedAny = True
+        if changedAny:
+            with open(cacheFilePath + ".tmp", 'wb') as cacheFile:
+                pickle.dump( (cacheVersionWanted, cachedDict), cacheFile )
+            os.replace(cacheFilePath + ".tmp", cacheFilePath)
     except: # missing or unreadable cache -> nothing to clean up here
         pass
+
+
+def removeFromExifCache ( removedPathList ):
+    changeCachedPaths( exifCachePath(), exifCacheVersion, removedPathList, [] )
 
 
 def deleteFilesFunction ( deletePathArray ):
@@ -742,9 +850,80 @@ def checkFileExistence( inWhichTable, filePath ):
 
 
 
-def renameOriginalFunction ( currentPath, newPath ) :
-    os.rename("/" + currentPath, "/" + newPath)
-    pyotherside.send('finishedRenaming', newPath)
+def inspectImageFile ( filePath, deepCheck ):
+    # the magic check is twelve bytes, cheap enough for every image the viewer opens,
+    # the decode attempt only runs when something already went wrong (deepCheck)
+    magicKinds = ( (b"\xff\xd8\xff", "jpg", (".jpg", ".jpeg")),
+                   (b"\x89PNG\r\n\x1a\n", "png", (".png",)),
+                   (b"GIF87a", "gif", (".gif",)),
+                   (b"GIF89a", "gif", (".gif",)),
+                   (b"BM", "bmp", (".bmp",)),
+                   (b"II*\x00", "tif", (".tif", ".tiff")),
+                   (b"MM\x00*", "tif", (".tif", ".tiff")) )
+    try:
+        fileSize = os.path.getsize(filePath)
+        with open(filePath, 'rb') as imageFile:
+            headBytes = imageFile.read(12)
+
+        realKind = ""
+        wantedExtensions = ()
+        for magicBytes, kindName, kindExtensions in magicKinds:
+            if headBytes.startswith(magicBytes):
+                realKind = kindName
+                wantedExtensions = kindExtensions
+        if headBytes[:4] == b"RIFF" and headBytes[8:12] == b"WEBP": # webp carries its magic further in
+            realKind = "webp"
+            wantedExtensions = (".webp",)
+
+        # the extension lies about the content, that is what makes the thumbnailer refuse the file
+        if realKind != "" and not filePath.lower().endswith(wantedExtensions):
+            dotIndex = filePath.rfind(".")
+            baseName = filePath[:dotIndex] if dotIndex > filePath.rfind("/") else filePath
+            suggestedFileName = (baseName + "." + realKind)[baseName.rfind("/")+1:]
+            pyotherside.send('imageFileInspected', filePath, "wrongExtension", realKind, suggestedFileName, fileSize)
+            return
+
+        # extension and content agree, so ask pillow whether the data is usable at all
+        if deepCheck is True:
+            try:
+                img = Image.open(filePath)
+                img.load()
+                img.close()
+            except:
+                pyotherside.send('imageFileInspected', filePath, "undecodable", realKind, "", fileSize)
+                return
+
+        pyotherside.send('imageFileInspected', filePath, "", realKind, "", fileSize)
+    except: # not even readable
+        pyotherside.send('imageFileInspected', filePath, "undecodable", "", "", 0)
+
+
+def renameImageFile ( oldPath, targetStorageMedia, targetFolder, newFileName ):
+    # renames in place when the current directory was chosen, otherwise moves the file along
+    try:
+        if "$CURRENT" in targetStorageMedia:
+            targetDir = os.path.dirname(oldPath)
+        elif "$HOME" in targetStorageMedia:
+            targetDir = str(Path.home()) + targetFolder
+        else:
+            targetDir = str((glob.glob("/run/media/*/*"))[int(targetStorageMedia)-1]) + targetFolder
+        newPath = targetDir + "/" + newFileName
+
+        if newPath == oldPath: # nothing to do, but QML still gets its answer
+            pyotherside.send('returnRenamedFile', oldPath, oldPath, "")
+            return
+        if os.path.exists(newPath): # never overwrite anything
+            pyotherside.send('returnRenamedFile', oldPath, "", "exists")
+            return
+
+        shutil.move(oldPath, newPath) # os.rename alone cannot cross filesystems, eg. onto an sd card
+
+        # the caches are keyed by path, move the entries over instead of losing them
+        changeCachedPaths( exifCachePath(), exifCacheVersion, [], [ (oldPath, newPath) ] )
+        changeCachedPaths( dHashCachePath(), dHashCacheVersion, [], [ (oldPath, newPath) ] )
+        pyotherside.send('returnRenamedFile', oldPath, newPath, "")
+    except: # nothing was changed that QML needs to know about
+        pyotherside.send('returnRenamedFile', oldPath, "", "failed")
 
 
 def checkCMDexistance ( command ) :
