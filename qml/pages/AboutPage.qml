@@ -11,7 +11,7 @@ AboutPageBase{
     appVersion: "0.6"
     description: "ImgOrganizer is an image gallery and viewer for SailfishOS with support for chronological timeline, custom albums, folders as well as search for date and filename."
     authors: "2023 yajo, 2023 Tobias Planitzer"
-    licenses: License { spdxId: "GPL-3.0" }
+    licenses: License { spdxId: "GPL-3.0-only" }
     attributions: OpalAboutAttribution {}
     sourcesUrl: "https://github.com/yajo10/harbour-imgorganizer/"
     extraSections: [
