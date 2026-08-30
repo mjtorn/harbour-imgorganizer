@@ -39,7 +39,23 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Stop selecting</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Refresh duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Show all</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -90,6 +106,22 @@
         <source>Open with</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Match near</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Match exact</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try matching near duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>BannerCrop</name>
@@ -111,9 +143,54 @@
     </message>
 </context>
 <context>
+    <name>BannerFixFileType</name>
+    <message>
+        <source>This is a %1 file with a wrong name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No decoder can read this file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rename it to %1 so every app can show it</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Delete it? It is %1 kB and shows up empty everywhere</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Delete file?</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>BannerGif</name>
+    <message>
+        <source>file name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>BannerRename</name>
     <message>
         <source>new</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>BannerRenameFile</name>
+    <message>
+        <source>file name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Current directory</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -135,7 +212,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>new album</source>
+        <source>New album, Category / Album creates a sub-album</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -150,6 +227,14 @@
     <name>FileDetailPage</name>
     <message>
         <source>Details &amp; Metadata</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Copy location</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Location copied</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -177,9 +262,50 @@
     </message>
     <message>
         <source>Refresh</source>
+        <translation></translation>
     </message>
     <message>
         <source>Saved as new copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stop selecting</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>GIF created</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Name already taken</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rename failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>GIF creation failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Find duplicates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>DUPLICATES</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unselect</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -334,6 +460,10 @@
         <source>About</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>That did not work</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>LicenseListPart</name>
@@ -472,6 +602,22 @@
     <name>SettingsPage</name>
     <message>
         <source>Metadata read-only: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Duplicate matching: </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>images that look the same</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>exact</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>near</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -652,6 +798,17 @@
     </message>
     <message>
         <source>Scan Folders:</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>ViewPage</name>
+    <message>
+        <source>This image cannot be displayed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Location copied</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

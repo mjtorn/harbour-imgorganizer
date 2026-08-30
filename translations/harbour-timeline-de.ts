@@ -39,8 +39,24 @@
         <translation>Nach Album filtern</translation>
     </message>
     <message>
+        <source>Stop selecting</source>
+        <translation>Auswahl beenden</translation>
+    </message>
+    <message>
+        <source>Refresh duplicates</source>
+        <translation>Duplikate aktualisieren</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Umbenennen</translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation>Alle anzeigen</translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation>Animiertes GIF erstellen</translation>
     </message>
     <message>
         <source>Unselect</source>
@@ -90,6 +106,22 @@
         <source>Resize</source>
         <translation>Skalieren</translation>
     </message>
+    <message>
+        <source>Match near</source>
+        <translation>Ähnliche finden</translation>
+    </message>
+    <message>
+        <source>Match exact</source>
+        <translation>Exakte finden</translation>
+    </message>
+    <message>
+        <source>No duplicates</source>
+        <translation>Keine Duplikate</translation>
+    </message>
+    <message>
+        <source>Try matching near duplicates</source>
+        <translation>Versuche ähnliche Duplikate</translation>
+    </message>
 </context>
 <context>
     <name>BannerCrop</name>
@@ -111,10 +143,55 @@
     </message>
 </context>
 <context>
+    <name>BannerFixFileType</name>
+    <message>
+        <source>This is a %1 file with a wrong name</source>
+        <translation>Dies ist eine %1-Datei mit falschem Namen</translation>
+    </message>
+    <message>
+        <source>No decoder can read this file</source>
+        <translation>Kein Dekoder kann diese Datei lesen</translation>
+    </message>
+    <message>
+        <source>Rename it to %1 so every app can show it</source>
+        <translation>In %1 umbenennen, damit jede App sie anzeigt</translation>
+    </message>
+    <message>
+        <source>Delete it? It is %1 kB and shows up empty everywhere</source>
+        <translation>Löschen? Sie ist %1 kB groß und bleibt überall leer</translation>
+    </message>
+    <message>
+        <source>Delete file?</source>
+        <translation>Datei löschen?</translation>
+    </message>
+</context>
+<context>
+    <name>BannerGif</name>
+    <message>
+        <source>file name</source>
+        <translation>Dateiname</translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation>ms</translation>
+    </message>
+</context>
+<context>
     <name>BannerRename</name>
     <message>
         <source>new</source>
         <translation>neu</translation>
+    </message>
+</context>
+<context>
+    <name>BannerRenameFile</name>
+    <message>
+        <source>file name</source>
+        <translation>Dateiname</translation>
+    </message>
+    <message>
+        <source>Current directory</source>
+        <translation>Aktuelles Verzeichnis</translation>
     </message>
 </context>
 <context>
@@ -131,8 +208,8 @@
 <context>
     <name>BannerToAlbum</name>
     <message>
-        <source>new album</source>
-        <translation>Neues Album</translation>
+        <source>New album, Category / Album creates a sub-album</source>
+        <translation>Neues Album, Kategorie / Album erzeugt ein Unteralbum</translation>
     </message>
     <message>
         <source>new</source>
@@ -151,6 +228,14 @@
     <message>
         <source>Details &amp; Metadata</source>
         <translation>Details &amp; Metadaten</translation>
+    </message>
+    <message>
+        <source>Copy location</source>
+        <translation>Pfad kopieren</translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation>Pfad kopiert</translation>
     </message>
 </context>
 <context>
@@ -234,6 +319,46 @@
     <message>
         <source>Saved as new copy</source>
         <translation>Als neue Kopie gespeichert</translation>
+    </message>
+    <message>
+        <source>Stop selecting</source>
+        <translation>Auswahl beenden</translation>
+    </message>
+    <message>
+        <source>GIF created</source>
+        <translation>GIF erstellt</translation>
+    </message>
+    <message>
+        <source>Name already taken</source>
+        <translation>Name bereits vergeben</translation>
+    </message>
+    <message>
+        <source>Rename failed</source>
+        <translation>Umbenennen fehlgeschlagen</translation>
+    </message>
+    <message>
+        <source>GIF creation failed</source>
+        <translation>GIF-Erstellung fehlgeschlagen</translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation>Animiertes GIF erstellen</translation>
+    </message>
+    <message>
+        <source>Find duplicates</source>
+        <translation>Duplikate suchen</translation>
+    </message>
+    <message>
+        <source>DUPLICATES</source>
+        <translation>DUPLIKATE</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>Mehrfachauswahl</translation>
+    </message>
+    <message>
+        <source>Unselect</source>
+        <translation>Abwählen</translation>
     </message>
     <message>
         <source>Refresh</source>
@@ -334,6 +459,10 @@
     <message>
         <source>About</source>
         <translation type="unfinished">Über</translation>
+    </message>
+    <message>
+        <source>That did not work</source>
+        <translation>Das hat nicht funktioniert</translation>
     </message>
 </context>
 <context>
@@ -476,6 +605,22 @@
     <message>
         <source>Metadata read-only: </source>
         <translation>Metadaten schreibgeschützt: </translation>
+    </message>
+    <message>
+        <source>Duplicate matching: </source>
+        <translation>Duplikaterkennung: </translation>
+    </message>
+    <message>
+        <source>images that look the same</source>
+        <translation>Bilder die gleich aussehen</translation>
+    </message>
+    <message>
+        <source>exact</source>
+        <translation>exakt</translation>
+    </message>
+    <message>
+        <source>near</source>
+        <translation>ähnlich</translation>
     </message>
     <message>
         <source>never write metadata into image files</source>
@@ -656,6 +801,17 @@
     <message>
         <source>for album, cover and slideshow</source>
         <translation>für Album, Cover und Slideshow</translation>
+    </message>
+</context>
+<context>
+    <name>ViewPage</name>
+    <message>
+        <source>This image cannot be displayed</source>
+        <translation>Dieses Bild kann nicht angezeigt werden</translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation>Pfad kopiert</translation>
     </message>
 </context>
 </TS>

@@ -70,6 +70,8 @@ Dialog {
             storageItem.setSetting("infoTimeUseExifAlbum", idComboboxUseExifAlbum.currentIndex)
             storageItem.setSetting("infoStrictReadOnly", idComboboxStrictReadOnly.currentIndex)
             infoStrictReadOnly = idComboboxStrictReadOnly.currentIndex
+            storageItem.setSetting("infoDuplicateTolerance", idComboboxDuplicateTolerance.currentIndex)
+            infoDuplicateTolerance = idComboboxDuplicateTolerance.currentIndex
             storageItem.setSetting("infoActivateCoverImages", idComboboxActivateCoverImages.currentIndex)
 
             if (idComboBoxPreviewSize.currentIndex === 0) { var devideWidthBy = 4 }
@@ -303,6 +305,21 @@ Dialog {
                     }
                     MenuItem {
                         text: qsTr("on")
+                    }
+                }
+            }
+            ComboBox {
+                id: idComboboxDuplicateTolerance
+                width: parent.width
+                label: qsTr("Duplicate matching: ")
+                currentIndex: (parseInt(storageItem.getSetting("infoDuplicateTolerance", 0)) === 0) ? 0 : 1
+                description: qsTr("images that look the same")
+                menu: ContextMenu {
+                    MenuItem {
+                        text: qsTr("exact")
+                    }
+                    MenuItem {
+                        text: qsTr("near")
                     }
                 }
             }
