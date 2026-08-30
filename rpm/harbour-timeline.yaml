@@ -1,18 +1,40 @@
 Name: harbour-timeline
 Summary: ImgOrganizer
-Version: 0.6
+Version: 1.0
 Release: 5
 # The contents of the Group field should be one of the groups listed here:
 # https://github.com/mer-tools/spectacle/blob/master/data/GROUPS
 Group: Qt/Qt
-URL: http://example.org/
-License: GPL v3
+URL: https://github.com/yajo10/harbour-imgorganizer
+License: GPL-3.0-only
 # This must be generated before uploading a package to a remote build service.
 # Usually this line does not need to be modified.
 Sources:
 - '%{name}-%{version}.tar.bz2'
 Description: |
   Show images on your device in chronological order and sort in albums.
+
+  %if 0%{?_chum}
+  Title: ImgOrganizer
+  Type: desktop-application
+  DeveloperName: yajo
+  Categories:
+   - Media
+   - Photo
+  Custom:
+    Repo: https://github.com/yajo10/harbour-imgorganizer
+  PackageIcon: https://github.com/yajo10/harbour-imgorganizer/raw/master/icons/172x172/harbour-timeline.png
+  Screenshots:
+   - https://github.com/yajo10/harbour-imgorganizer/raw/master/screenshots/screenshot1.jpg
+   - https://github.com/yajo10/harbour-imgorganizer/raw/master/screenshots/screenshot2.jpg
+   - https://github.com/yajo10/harbour-imgorganizer/raw/master/screenshots/screenshot3.jpg
+   - https://github.com/yajo10/harbour-imgorganizer/raw/master/screenshots/screenshot4.jpg
+  Links:
+    Homepage: https://github.com/yajo10/harbour-imgorganizer
+    Help: https://github.com/yajo10/harbour-imgorganizer/issues
+    Bugtracker: https://github.com/yajo10/harbour-imgorganizer/issues
+    Donation: https://liberapay.com/yajo10/donate
+  %endif
 Builder: qmake5
 
 # This section specifies build dependencies that are resolved using pkgconfig.

@@ -10,7 +10,7 @@ Name:       harbour-timeline
 %define __provides_exclude_from ^%{_datadir}/.*$
 
 Summary:    ImgOrganizer
-Version:    0.6
+Version:    1.0
 Release:    5
 Group:      Qt/Qt
 License:    GPL-3.0-only
@@ -54,6 +54,7 @@ Links:
   Donation: https://liberapay.com/yajo10/donate
 %endif
 
+
 %prep
 %setup -q -n %{name}-%{version}
 
@@ -78,6 +79,9 @@ rm -rf %{buildroot}
 %qmake5_install
 
 # >> install post
+# python bytecode compiled in the source tree must not ship: it can be stale against the sources
+# beside it, and python rebuilds what it needs anyway
+find %{buildroot}%{_datadir}/%{name} -name '__pycache__' -type d -prune -exec rm -rf {} +
 # << install post
 
 desktop-file-install --delete-original       \
