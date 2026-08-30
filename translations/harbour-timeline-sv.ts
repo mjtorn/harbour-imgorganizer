@@ -39,8 +39,24 @@
         <translation>Filtrera efter album</translation>
     </message>
     <message>
+        <source>Stop selecting</source>
+        <translation>Sluta markera</translation>
+    </message>
+    <message>
+        <source>Refresh duplicates</source>
+        <translation>Uppdatera dubbletter</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Byt namn</translation>
+    </message>
+    <message>
         <source>Show all</source>
         <translation>Visa alla</translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation>Skapa animerad GIF</translation>
     </message>
     <message>
         <source>Info</source>
@@ -90,6 +106,22 @@
         <source>Open with</source>
         <translation>Öppna med</translation>
     </message>
+    <message>
+        <source>Match near</source>
+        <translation>Matcha nära</translation>
+    </message>
+    <message>
+        <source>Match exact</source>
+        <translation>Matcha exakt</translation>
+    </message>
+    <message>
+        <source>No duplicates</source>
+        <translation>Inga dubbletter</translation>
+    </message>
+    <message>
+        <source>Try matching near duplicates</source>
+        <translation>Prova att matcha nära dubbletter</translation>
+    </message>
 </context>
 <context>
     <name>BannerCrop</name>
@@ -111,10 +143,55 @@
     </message>
 </context>
 <context>
+    <name>BannerFixFileType</name>
+    <message>
+        <source>This is a %1 file with a wrong name</source>
+        <translation>Det här är en %1-fil med fel namn</translation>
+    </message>
+    <message>
+        <source>No decoder can read this file</source>
+        <translation>Ingen avkodare kan läsa filen</translation>
+    </message>
+    <message>
+        <source>Rename it to %1 so every app can show it</source>
+        <translation>Byt namn till %1 så alla appar kan visa den</translation>
+    </message>
+    <message>
+        <source>Delete it? It is %1 kB and shows up empty everywhere</source>
+        <translation>Ta bort den? Den är %1 kB och visas tom överallt</translation>
+    </message>
+    <message>
+        <source>Delete file?</source>
+        <translation>Vill du ta bort filen?</translation>
+    </message>
+</context>
+<context>
+    <name>BannerGif</name>
+    <message>
+        <source>file name</source>
+        <translation>Filnamn</translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation>ms</translation>
+    </message>
+</context>
+<context>
     <name>BannerRename</name>
     <message>
         <source>new</source>
         <translation>Nytt</translation>
+    </message>
+</context>
+<context>
+    <name>BannerRenameFile</name>
+    <message>
+        <source>file name</source>
+        <translation>Filnamn</translation>
+    </message>
+    <message>
+        <source>Current directory</source>
+        <translation>Aktuell katalog</translation>
     </message>
 </context>
 <context>
@@ -135,8 +212,8 @@
         <translation>Nytt</translation>
     </message>
     <message>
-        <source>new album</source>
-        <translation>Nytt album</translation>
+        <source>New album, Category / Album creates a sub-album</source>
+        <translation>Nytt album, Kategori / Album skapar ett underalbum</translation>
     </message>
 </context>
 <context>
@@ -151,6 +228,14 @@
     <message>
         <source>Details &amp; Metadata</source>
         <translation>Detaljerad info &amp; metadata</translation>
+    </message>
+    <message>
+        <source>Copy location</source>
+        <translation>Kopiera sökväg</translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation>Sökväg kopierad</translation>
     </message>
 </context>
 <context>
@@ -174,6 +259,50 @@
     <message>
         <source>Jump to Date</source>
         <translation>Hoppa till datum</translation>
+    </message>
+    <message>
+        <source>Saved as new copy</source>
+        <translation>Sparad som ny kopia</translation>
+    </message>
+    <message>
+        <source>Stop selecting</source>
+        <translation>Sluta markera</translation>
+    </message>
+    <message>
+        <source>GIF created</source>
+        <translation>GIF skapad</translation>
+    </message>
+    <message>
+        <source>Name already taken</source>
+        <translation>Namnet är upptaget</translation>
+    </message>
+    <message>
+        <source>Rename failed</source>
+        <translation>Namnbytet misslyckades</translation>
+    </message>
+    <message>
+        <source>GIF creation failed</source>
+        <translation>GIF-skapandet misslyckades</translation>
+    </message>
+    <message>
+        <source>Create animated gif</source>
+        <translation>Skapa animerad GIF</translation>
+    </message>
+    <message>
+        <source>Find duplicates</source>
+        <translation>Hitta dubbletter</translation>
+    </message>
+    <message>
+        <source>DUPLICATES</source>
+        <translation>DUBBLETTER</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>Markera</translation>
+    </message>
+    <message>
+        <source>Unselect</source>
+        <translation>Avmarkera</translation>
     </message>
     <message>
         <source>Refresh</source>
@@ -331,6 +460,10 @@
         <source>About</source>
         <translation type="unfinished">Om</translation>
     </message>
+    <message>
+        <source>That did not work</source>
+        <translation>Det gick inte</translation>
+    </message>
 </context>
 <context>
     <name>LicenseListPart</name>
@@ -470,12 +603,28 @@
 <context>
     <name>SettingsPage</name>
     <message>
-        <source>Strict read-only: </source>
-        <translation>Strikt skrivskydd: </translation>
+        <source>Metadata read-only: </source>
+        <translation>Skrivskyddad metadata: </translation>
     </message>
     <message>
-        <source>never write into image files, editing disabled</source>
-        <translation>skriver aldrig till bildfiler, redigering inaktiverad</translation>
+        <source>Duplicate matching: </source>
+        <translation>Dublettmatchning: </translation>
+    </message>
+    <message>
+        <source>images that look the same</source>
+        <translation>bilder som ser likadana ut</translation>
+    </message>
+    <message>
+        <source>exact</source>
+        <translation>exakt</translation>
+    </message>
+    <message>
+        <source>near</source>
+        <translation>nära</translation>
+    </message>
+    <message>
+        <source>never write metadata into image files</source>
+        <translation>skriver aldrig metadata till bildfiler</translation>
     </message>
     <message>
         <source>on</source>
@@ -652,6 +801,17 @@
     <message>
         <source>Scan Folders:</source>
         <translation>Genomsök mappar:</translation>
+    </message>
+</context>
+<context>
+    <name>ViewPage</name>
+    <message>
+        <source>This image cannot be displayed</source>
+        <translation>Den här bilden kan inte visas</translation>
+    </message>
+    <message>
+        <source>Location copied</source>
+        <translation>Sökväg kopierad</translation>
     </message>
 </context>
 </TS>

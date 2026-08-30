@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import QtQuick.LocalStorage 2.0 // DB reading and writing
+import Nemo.DBus 2.0 // notification taps call back into the app
 import "pages"
 
 ApplicationWindow {
@@ -18,7 +19,13 @@ ApplicationWindow {
     property var amountDetails : parseInt(storageItem.getSetting("infoTimeShowDetailsIndex", 0))
     property var infoWidthDevider : parseInt(storageItem.getSetting("infoWidthDevider", 3))
     property var infoActivateCoverImages : parseInt(storageItem.getSetting("infoActivateCoverImages", 0))
-    property var infoStrictReadOnly : parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) // 1 = never write into image files, editing disabled
+    property var infoStrictReadOnly : parseInt(storageItem.getSetting("infoStrictReadOnly", 1)) // 1 = never write metadata into image files
+    property var infoDuplicateTolerance : parseInt(storageItem.getSetting("infoDuplicateTolerance", 0)) // 0 = exact perceptual match, 1 = near matches too
+    property var infoDuplicateDistance : parseInt(storageItem.getSetting("infoDuplicateDistance", 4)) // how many bits near matching allows, set from the slider in DUPLICATES
+    property string lastEditedImagePath : "" // edits always save a copy, this is the most recent one
+    property var lastDeletedPathsArray : [] // the most recently deleted files, open pages prune their own image references with it
+    property string pendingGifAlbum : "" // album a freshly created gif joins once python reports it saved
+    property int notificationTapCounter : 0 // incremented over dbus when the user taps a notification, FirstPage reacts to the change
     property var coverImageChangeInterval : parseInt(storageItem.getSetting("coverImageChangeInterval", 5000))
 
     // cover progress and image path
@@ -33,8 +40,22 @@ ApplicationWindow {
 
     // random images buffer
     property string coverImagePath : ""
+    property var inspectedImageFiles : ({}) // path -> what an inspection found out about a file the thumbnailer refused
+    property var expandedAlbumPrefixes : ({}) // which album name prefixes ("Foo", "Foo / Bar") are expanded, shared by the album view and every picker
     property var previousRandomImagesAlbumArray : []
 
+
+    DBusAdaptor {
+        // tapping a notification banner is a dbus remote action, lipstick calls this method
+        service: "harbour.timeline"
+        path: "/harbour/timeline"
+        iface: "harbour.timeline"
+
+        function openNotifiedImage() {
+            idApplicationWindow.activate()
+            notificationTapCounter = notificationTapCounter + 1
+        }
+    }
 
     initialPage: Component { FirstPage { } }
     cover: Qt.resolvedUrl("cover/CoverPage.qml")
