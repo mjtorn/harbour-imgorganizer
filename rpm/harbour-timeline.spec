@@ -54,6 +54,7 @@ Links:
   Donation: https://liberapay.com/yajo10/donate
 %endif
 
+
 %prep
 %setup -q -n %{name}-%{version}
 
