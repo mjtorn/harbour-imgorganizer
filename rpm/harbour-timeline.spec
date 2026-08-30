@@ -79,6 +79,9 @@ rm -rf %{buildroot}
 %qmake5_install
 
 # >> install post
+# python bytecode compiled in the source tree must not ship: it can be stale against the sources
+# beside it, and python rebuilds what it needs anyway
+find %{buildroot}%{_datadir}/%{name} -name '__pycache__' -type d -prune -exec rm -rf {} +
 # << install post
 
 desktop-file-install --delete-original       \
