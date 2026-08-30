@@ -19,6 +19,78 @@ MouseArea {
     property string triggeredOn: ""
     property bool filterMode : false // pick an album as folder filter instead of assigning it, no album creation
 
+    ListModel {
+        id: idListModelAlbumPicker
+    }
+
+    function buildAlbumPickerTree() {
+        // same "Foo / Bar / Baz" coalescing as the album view, structure only - groups expand on tap, only leaves are pickable.
+        // the expansion state is expandedAlbumPrefixes, shared with the album view and every other picker, so the tree
+        // always looks the way it was last left - a per-banner state made each picker open collapsed on its own
+        var nodeByPrefix = ({})
+        var prefixList = []
+        for (var i = 0; i < idListModelAlbums.count; i++) {
+            var fullName = idListModelAlbums.get(i).album_name
+            if (fullName !== standardSearchAlbum && fullName !== standardFavouritesAlbum && fullName !== standardDuplicatesAlbum) {
+                var isSpecialAlbum = (fullName === standardAlbum)
+                var nameParts = isSpecialAlbum ? [fullName] : fullName.split(" / ")
+                var prefix = ""
+                for (var p = 0; p < nameParts.length; p++) {
+                    var parentPrefix = prefix
+                    prefix = (p === 0) ? nameParts[p] : prefix + " / " + nameParts[p]
+                    if (nodeByPrefix[prefix] === undefined) {
+                        nodeByPrefix[prefix] = { "displayName" : (isSpecialAlbum ? nameParts[p].substring(1) : nameParts[p]), "parentPrefix" : parentPrefix, "depth" : p, "isAlbum" : false, "hasChildren" : false }
+                        prefixList.push(prefix)
+                    }
+                    if (p === nameParts.length - 1) {
+                        nodeByPrefix[prefix].isAlbum = true
+                    }
+                    else {
+                        nodeByPrefix[prefix].hasChildren = true
+                    }
+                }
+            }
+        }
+
+        prefixList.sort()
+        idListModelAlbumPicker.clear()
+        for (i = 0; i < prefixList.length; i++) {
+            var node = nodeByPrefix[prefixList[i]]
+            var visibleRow = true
+            var ancestorPrefix = node.parentPrefix
+            while (ancestorPrefix !== "") {
+                if (expandedAlbumPrefixes[ancestorPrefix] !== true) { visibleRow = false }
+                ancestorPrefix = nodeByPrefix[ancestorPrefix].parentPrefix
+            }
+            if (visibleRow === true) {
+                var expandMarker = (node.hasChildren === true) ? ((expandedAlbumPrefixes[prefixList[i]] === true) ? "▼ " : "▶ ") : ""
+                idListModelAlbumPicker.append({ "album_name" : prefixList[i],
+                                                "display_name" : expandMarker + ((node.depth === 0) ? node.displayName : prefixList[i]),
+                                                "is_group" : node.hasChildren
+                                              })
+                // every expanded group gets an own selectable leaf row - this is also how an image
+                // is assigned to a parent album that so far only exists as a prefix of its sub-albums
+                if (node.hasChildren === true && expandedAlbumPrefixes[prefixList[i]] === true) {
+                    idListModelAlbumPicker.append({ "album_name" : prefixList[i],
+                                                    "display_name" : prefixList[i],
+                                                    "is_group" : false
+                                                  })
+                }
+            }
+        }
+    }
+
+    function togglePickerGroup( groupPrefix ) {
+        if (expandedAlbumPrefixes[groupPrefix] === true) {
+            delete expandedAlbumPrefixes[groupPrefix]
+        }
+        else {
+            expandedAlbumPrefixes[groupPrefix] = true
+        }
+        buildAlbumPickerTree()
+        buildAlbumTree() // the album view shows the same tree, keep it in step
+    }
+
     Behavior on opacity {
         FadeAnimator {}
     }
@@ -82,7 +154,7 @@ MouseArea {
                         color: Theme.highlightColor
                         inputMethodHints: Qt.ImhNoPredictiveText
                         //validator: RegExpValidator { regExp: /[a-zA-Z0-9äöüÄÖÜ_=()\/.!?#+-]*$/ }
-                        placeholderText: qsTr("new album")
+                        placeholderText: qsTr("New album, Category / Album creates a sub-album")
                         EnterKey.onClicked: {
                             if (text.length > 0) {
                                 idListModelAlbums.append({"album_name" : text })
@@ -114,14 +186,17 @@ MouseArea {
                         width: parent.width
                         height: contentHeight
 
-                        model: idListModelAlbums
+                        model: idListModelAlbumPicker
                         delegate: ListItem {
-                            visible: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum )
-                            enabled: visible
                             contentX: idBackgroundRect.radius
                             contentWidth: parent.width - 2* contentX
-                            contentHeight: ( album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum ) ? Theme.itemSizeExtraSmall : 0
+                            contentHeight: Theme.itemSizeExtraSmall
                             onClicked: {
+                                // a group row only expands or collapses its sub-albums, the picker stays open
+                                if (is_group === true) {
+                                    togglePickerGroup( album_name )
+                                    return
+                                }
                                 if (filterMode === true) {
                                     if (triggeredFrom === "fromTimeline") {
                                         setTimelineAlbumFilter( album_name )
@@ -145,11 +220,9 @@ MouseArea {
                                 hide()
                             }
                             Label {
-                                text: (album_name[0] === ".")
-                                      ? (album_name.substring(1))
-                                      : (album_name)
+                                text: display_name
                                 color: Theme.primaryColor
-                                font.bold: (album_name[0] === ".")
+                                font.bold: (is_group === true || album_name[0] === ".")
                                 font.pixelSize: Theme.fontSizeSmall
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -172,6 +245,7 @@ MouseArea {
         if (upperMargin && (typeof(upperMargin) != "undefined")) { idBackgroundRect.anchors.topMargin = upperMargin }
         else { idBackgroundRect.height = page.height / 2 }
         targetAlbumPathList = chosenFilesArray
+        buildAlbumPickerTree() // rebuilt on every open, the album list may have changed - expansion state is kept
         idFooterRow.visible = false
         popupAlbums.opacity = 1.0
     }
@@ -220,6 +294,11 @@ MouseArea {
             if (triggeredFrom === "fromFolder") {
                 idListModelImagesFolder.setProperty(targetIndex_FolderOrAlbum, "album", targetAlbumName)
             }
+        }
+
+        else if (triggeredFrom === "fromViewPage") {
+            // the viewer is reachable from every list, so sync the album role everywhere by path
+            setAlbumInAllModels( targetImagePath, targetAlbumName )
         }
 
         else if (triggeredFrom === "fromAlbum") { // treats index as the index from albumList
