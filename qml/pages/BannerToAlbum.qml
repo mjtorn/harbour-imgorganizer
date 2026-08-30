@@ -18,14 +18,15 @@ MouseArea {
     property string triggeredFrom : ""
     property string triggeredOn: ""
     property bool filterMode : false // pick an album as folder filter instead of assigning it, no album creation
-    property var pickerExpandedPrefixes : ({}) // which album name prefixes are expanded, kept across opens so repeated assignments need no re-expanding
 
     ListModel {
         id: idListModelAlbumPicker
     }
 
     function buildAlbumPickerTree() {
-        // same "Foo / Bar / Baz" coalescing as the album view, structure only - groups expand on tap, only leaves are pickable
+        // same "Foo / Bar / Baz" coalescing as the album view, structure only - groups expand on tap, only leaves are pickable.
+        // the expansion state is expandedAlbumPrefixes, shared with the album view and every other picker, so the tree
+        // always looks the way it was last left - a per-banner state made each picker open collapsed on its own
         var nodeByPrefix = ({})
         var prefixList = []
         for (var i = 0; i < idListModelAlbums.count; i++) {
@@ -58,18 +59,18 @@ MouseArea {
             var visibleRow = true
             var ancestorPrefix = node.parentPrefix
             while (ancestorPrefix !== "") {
-                if (pickerExpandedPrefixes[ancestorPrefix] !== true) { visibleRow = false }
+                if (expandedAlbumPrefixes[ancestorPrefix] !== true) { visibleRow = false }
                 ancestorPrefix = nodeByPrefix[ancestorPrefix].parentPrefix
             }
             if (visibleRow === true) {
-                var expandMarker = (node.hasChildren === true) ? ((pickerExpandedPrefixes[prefixList[i]] === true) ? "▼ " : "▶ ") : ""
+                var expandMarker = (node.hasChildren === true) ? ((expandedAlbumPrefixes[prefixList[i]] === true) ? "▼ " : "▶ ") : ""
                 idListModelAlbumPicker.append({ "album_name" : prefixList[i],
                                                 "display_name" : expandMarker + ((node.depth === 0) ? node.displayName : prefixList[i]),
                                                 "is_group" : node.hasChildren
                                               })
                 // every expanded group gets an own selectable leaf row - this is also how an image
                 // is assigned to a parent album that so far only exists as a prefix of its sub-albums
-                if (node.hasChildren === true && pickerExpandedPrefixes[prefixList[i]] === true) {
+                if (node.hasChildren === true && expandedAlbumPrefixes[prefixList[i]] === true) {
                     idListModelAlbumPicker.append({ "album_name" : prefixList[i],
                                                     "display_name" : prefixList[i],
                                                     "is_group" : false
@@ -80,13 +81,14 @@ MouseArea {
     }
 
     function togglePickerGroup( groupPrefix ) {
-        if (pickerExpandedPrefixes[groupPrefix] === true) {
-            delete pickerExpandedPrefixes[groupPrefix]
+        if (expandedAlbumPrefixes[groupPrefix] === true) {
+            delete expandedAlbumPrefixes[groupPrefix]
         }
         else {
-            pickerExpandedPrefixes[groupPrefix] = true
+            expandedAlbumPrefixes[groupPrefix] = true
         }
         buildAlbumPickerTree()
+        buildAlbumTree() // the album view shows the same tree, keep it in step
     }
 
     Behavior on opacity {
@@ -292,6 +294,11 @@ MouseArea {
             if (triggeredFrom === "fromFolder") {
                 idListModelImagesFolder.setProperty(targetIndex_FolderOrAlbum, "album", targetAlbumName)
             }
+        }
+
+        else if (triggeredFrom === "fromViewPage") {
+            // the viewer is reachable from every list, so sync the album role everywhere by path
+            setAlbumInAllModels( targetImagePath, targetAlbumName )
         }
 
         else if (triggeredFrom === "fromAlbum") { // treats index as the index from albumList

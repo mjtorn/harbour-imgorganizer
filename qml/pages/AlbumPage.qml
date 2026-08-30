@@ -30,10 +30,59 @@ Page {
     BannerGif {
         id: bannerGifFromAlbum
     }
+    BannerRenameFile {
+        id: bannerRenameFileFromAlbum
+    }
+
+    Column {
+        // pinned to the page, so whatever is in here stays put while the grid scrolls. with nothing
+        // visible the column collapses to no height at all and the grid gets the whole page
+        id: idColumnPinnedBottom
+        anchors.bottom: parent.bottom
+        width: parent.width
+
+        Label {
+            // hashing a whole library takes minutes on a cold cache, and a bare spinner made that look like a hang
+            visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (finishedLoading === false) && (maxScannedImages > 0)
+            width: parent.width
+            height: Theme.itemSizeExtraSmall
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: Theme.highlightColor
+            font.pixelSize: Theme.fontSizeSmall
+            text: currentlyScannedImage + " / " + maxScannedImages
+        }
+        Slider {
+            // always at hand while near matching is active
+            id: idSliderDuplicateTolerance
+            visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (infoDuplicateTolerance !== 0)
+            enabled: visible && (finishedLoading === true) // no stacking a second search onto a running one
+            width: parent.width
+            height: Theme.itemSizeLarge
+            minimumValue: 1
+            maximumValue: 8
+            stepSize: 1
+            leftMargin: Theme.paddingLarge * 2
+            rightMargin: Theme.paddingLarge * 2
+            valueText: "Δ" + Math.round(value) // a step of one, but never show a float if it ever rounds off
+            Component.onCompleted: {
+                value = infoDuplicateDistance // assigned, not bound: dragging the handle writes value anyway
+            }
+            onDownChanged: {
+                // the slider component owns onReleased for its own dragging, letting go is watched here
+                if (down === false && Math.round(value) !== infoDuplicateDistance) {
+                    setDuplicateDistance( Math.round(value) )
+                }
+            }
+        }
+    }
 
     SilicaGridView {
         id: idGridViewAlbums
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: idColumnPinnedBottom.top
         clip: true
         cellWidth: minimumTimelineListItemHeight
         cellHeight: cellWidth
@@ -87,6 +136,24 @@ Page {
             highlightColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
             backgroundColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
             MenuItem {
+                visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum)
+                text: qsTr("Refresh duplicates")
+                onClicked: {
+                    // rescan first so freshly arrived images are known, the duplicate search chains after it
+                    pendingDuplicateSearch = true
+                    clearAllLists()
+                    py.scanForImages()
+                }
+            }
+            MenuItem {
+                // the item names the mode one switches to, matching is a setting so it sticks
+                visible: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum)
+                text: (infoDuplicateTolerance === 0) ? qsTr("Match near") : qsTr("Match exact")
+                onClicked: {
+                    toggleDuplicateTolerance()
+                }
+            }
+            MenuItem {
                 text: (multiSelectActive === true) ? qsTr("Unselect") : qsTr("Selection")
                 onClicked: {
                     if (multiSelectActive === true) {
@@ -112,6 +179,18 @@ Page {
             }
         }
         VerticalScrollDecorator {}
+
+        BusyIndicator {
+            // an empty grid has no tiles to carry their own indicators, so a search would look like nothing happening
+            anchors.centerIn: parent
+            running: (finishedLoading === false) && (idGridViewAlbums.count === 0)
+            size: BusyIndicatorSize.Large
+        }
+        ViewPlaceholder {
+            enabled: (currentModel === "albums") && (currentAlbum === standardDuplicatesAlbum) && (idGridViewAlbums.count === 0) && (finishedLoading === true)
+            text: qsTr("No duplicates")
+            hintText: (infoDuplicateTolerance === 0) ? qsTr("Try matching near duplicates") : ""
+        }
 
         model: (currentModel === "albums") ? idListModelImagesAlbum : idListModelImagesFolder
         delegate: GridItem {
@@ -168,8 +247,9 @@ Page {
 
             menu: Component {
                 ContextMenu {
-                    hasContent: (multiSelectActive !== true) || (multiSelectActive === true && counterSelectedTotal !== 0)
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: qsTr("Set Album")
                         onClicked: {
                             var chosenFilesArray = []
@@ -237,6 +317,8 @@ Page {
                         }
                     }
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: (isFavourite !== "true") ? qsTr("Set Favourite") : qsTr("From Favourite")
                         onClicked: {
                             // only use isFavourite info from the item currently touched
@@ -368,6 +450,8 @@ Page {
                         onClicked: Qt.openUrlExternally(filePath)
                     }
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: (multiSelectActive === false) ? qsTr("Share") : qsTr("Share as ZIP")
                         ShareAction {
                             id: shareAction
@@ -401,7 +485,7 @@ Page {
                         }
                     }
                     MenuItem {
-                        enabled: pillowAvailable && multiSelectActive
+                        enabled: pillowAvailable && multiSelectActive && counterSelectedTotal > 0
                         visible: enabled
                         text: qsTr("Resize")
                         onClicked: {
@@ -441,6 +525,8 @@ Page {
                         }
                     }
                     MenuItem {
+                        visible: (multiSelectActive === false) || (counterSelectedTotal > 0)
+                        enabled: visible
                         text: qsTr("Delete")
                         onClicked: {
                             var chosenFilesArray = []
@@ -469,6 +555,14 @@ Page {
                     MenuItem {
                         enabled: multiSelectActive === false
                         visible: enabled
+                        text: qsTr("Rename")
+                        onClicked: {
+                            bannerRenameFileFromAlbum.notify( filePath, fileName )
+                        }
+                    }
+                    MenuItem {
+                        enabled: multiSelectActive === false
+                        visible: enabled
                         text: qsTr("Info")
                         onClicked: {
                             idImageSizeHelper.source = ""
@@ -478,10 +572,26 @@ Page {
                             py.getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite )
                         }
                     }
+                    MenuItem {
+                        text: (multiSelectActive === true) ? qsTr("Stop selecting") : qsTr("Selection")
+                        onClicked: {
+                            if (multiSelectActive === true) {
+                                multiSelectActive = false
+                                unselectAll()
+                            }
+                            else {
+                                // start selecting right here, with the long-tapped image already selected
+                                multiSelectActive = true
+                                selected = true
+                                counterSelectedTotal = counterSelectedTotal + 1
+                            }
+                        }
+                    }
                 }
             }
 
             Image {
+                id: idThumbAlbumTile
                 width: parent.width
                 height: width
                 sourceSize.width: width
@@ -492,6 +602,27 @@ Page {
                 asynchronous: true
                 cache: false
 
+                Image {
+                    // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                    id: idThumbAlbumTileFallback
+                    anchors.fill: parent
+                    visible: idThumbAlbumTile.status === Image.Error
+                    source: (idThumbAlbumTile.status === Image.Error) ? filePath : ""
+                    sourceSize.width: parent.width
+                    sourceSize.height: parent.height
+                    autoTransform: true
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: false
+                }
+                Icon {
+                    // nothing could be decoded at all, a marker beats an empty square - opening it explains why
+                    visible: idThumbAlbumTileFallback.status === Image.Error
+                    anchors.centerIn: parent
+                    width: parent.width / 3
+                    height: width
+                    source: "image://theme/icon-m-image?"
+                }
                 Rectangle {
                     id: idBackHighlight
                     visible: selected
@@ -519,6 +650,26 @@ Page {
                     anchors.centerIn: parent
                     highlightColor: Theme.primaryColor
                     source: "image://theme/icon-l-acknowledge?"
+                }
+                Label {
+                    // the group number tells which tiles belong together, the distance tells how far
+                    // apart they are - a near group chains, so a member can sit beyond the tolerance
+                    visible: (currentAlbum === standardDuplicatesAlbum) && (duplicateGroup >= 0)
+                    anchors.bottom: parent.bottom // the favourite icon owns the upper left corner
+                    anchors.left: parent.left
+                    leftPadding: Theme.paddingSmall
+                    rightPadding: Theme.paddingSmall
+                    color: Theme.primaryColor
+                    font.pixelSize: Theme.fontSizeTiny
+                    text: "#" + (duplicateGroup + 1) + ((infoDuplicateTolerance !== 0 && duplicateDistance >= 0) ? ("  Δ" + duplicateDistance) : "")
+
+                    Rectangle {
+                        z: -1
+                        anchors.fill: parent
+                        visible: idBackHighlight.visible === false
+                        color: Theme.highlightDimmerColor
+                        opacity: 0.75
+                    }
                 }
             }
             BusyIndicator {

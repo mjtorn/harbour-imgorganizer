@@ -106,11 +106,15 @@ MouseArea {
                             hide()
                         }
                         Label {
-                            text: (storageMedia === "$HOME") ? folderPath : (folderPath + " (SD " + storageMedia + ")")
+                            width: parent.width
+                            elide: Text.ElideLeft // a source folder is a full path, its tail is the telling half
+                            horizontalAlignment: Text.AlignHCenter
+                            text: (storageMedia === "$CURRENT") ? folderPath
+                                  : ((storageMedia === "$HOME") ? folderPath : (folderPath + " (SD " + storageMedia + ")"))
                             color: enabled ? Theme.primaryColor : Theme.secondaryColor
+                            font.italic: (storageMedia === "$CURRENT") // same note as the rename banner: not a configured folder
                             font.pixelSize: Theme.fontSizeSmall
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.horizontalCenter: parent.horizontalCenter
                         }
                     }
                 }
@@ -182,8 +186,20 @@ MouseArea {
         idTextFieldGifName.focus = true
         idTextFieldGifName.forceActiveFocus()
 
-        // offer the configured scan folders as destinations, parsed like the settings page does
+        // the folders the frames themselves live in come first: that is where the result belongs most
+        // often, and it may not be a configured scan folder at all
         idListModelGifFolders.clear()
+        var seenSourceFolders = ({})
+        for (var s = 0; s < gifPathsArray.length; s++) {
+            var sourcePath = (gifPathsArray[s]).toString()
+            var sourceFolder = sourcePath.substring(0, sourcePath.lastIndexOf("/"))
+            if (sourceFolder !== "" && seenSourceFolders[sourceFolder] !== true) {
+                seenSourceFolders[sourceFolder] = true
+                idListModelGifFolders.append({ "folderPath" : sourceFolder, "storageMedia" : "$CURRENT" })
+            }
+        }
+
+        // then the configured scan folders, parsed like the settings page does
         var folders2scanHOME = (storageItem.getSetting("infoFolders2scanHOME", "/Downloads|||/Pictures|||/Documents|||/android_storage")).split("|||")
         for (var i = 0; i < folders2scanHOME.length; i++) {
             if (folders2scanHOME[i] !== "") {
