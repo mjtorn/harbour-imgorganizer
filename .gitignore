@@ -1,3 +1,11 @@
-
 harbour-expenditure.pro.user
 harbour-expenditure.pro.*
+__pycache__/
+*.pyc
+*.qm
+RPMS/
+Makefile
+documentation.list
+harbour-timeline
+harbour-timeline.o
+*.pro.user

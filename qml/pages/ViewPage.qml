@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import QtGraphicalEffects 1.0
+import Nemo.Notifications 1.0 // for the urgency enum, the notification itself comes from FirstPage
 
 
 Page {
@@ -13,6 +14,146 @@ Page {
     // own values
     property color buttonBackgroundColor: Theme.rgba(Theme.highlightDimmerColor, 1)
     property var currentImagePath : allCurrentModelImagePathsArray[currentImageIndex]
+    property var trackedDeletedPaths : lastDeletedPathsArray // watchdog pattern: prune deleted files so swiping and the slideshow never hit them
+    onTrackedDeletedPathsChanged: {
+        if (trackedDeletedPaths.length === 0 || status !== PageStatus.Active) { return }
+        var shownPath = currentImagePath
+        var cleanedPathsArray = []
+        for (var i = 0; i < allCurrentModelImagePathsArray.length; i++) {
+            if (trackedDeletedPaths.indexOf(allCurrentModelImagePathsArray[i]) === -1) {
+                cleanedPathsArray.push(allCurrentModelImagePathsArray[i])
+            }
+        }
+        if (cleanedPathsArray.length === allCurrentModelImagePathsArray.length) { return } // nothing shown here was deleted
+        if (cleanedPathsArray.length === 0) {
+            pageStack.pop()
+            return
+        }
+        allCurrentModelImagePathsArray = cleanedPathsArray
+        var newIndex = cleanedPathsArray.indexOf(shownPath)
+        currentImageIndex = (newIndex !== -1) ? newIndex : Math.min(currentImageIndex, cleanedPathsArray.length - 1)
+    }
+    // tap-to-toggle info overlay, stays visible across image switches, hidden by default
+    property bool showImageInfo : false
+    property var currentImageInfo : ({ "fileName" : "", "folderPath" : "", "dateText" : "", "album" : "", "isFavourite" : "false" })
+    onShowImageInfoChanged: refreshImageInfo()
+    onCurrentImagePathChanged: {
+        refreshImageInfo()
+        inspectShownImage( false ) // twelve bytes, just to see whether the name matches the content
+    }
+
+    property var pendingTroubleFinding : null // a finding that arrived before the page was ready to show it
+
+    function inspectShownImage( deepCheck ) {
+        if (currentImagePath === undefined || currentImagePath === "") { return }
+        py.inspectImageFile( (currentImagePath).toString(), deepCheck )
+    }
+
+    Connections {
+        // a finding arrived, see whether it concerns the image on screen
+        target: page
+        onImageInspectionCounterChanged: {
+            var shownPath = (currentImagePath !== undefined) ? (currentImagePath).toString() : ""
+            var finding = inspectedImageFiles[shownPath]
+            if (finding === undefined || finding.reason !== "wrongExtension") { return }
+            offerFileTypeFix( shownPath, finding )
+        }
+    }
+    onStatusChanged: {
+        // opening the page takes a push animation, a finding that arrived during it waited for this
+        if (status === PageStatus.Active && pendingTroubleFinding !== null) {
+            var waitingFinding = pendingTroubleFinding
+            pendingTroubleFinding = null
+            if (waitingFinding.path === ((currentImagePath !== undefined) ? (currentImagePath).toString() : "")) {
+                offerFileTypeFix( waitingFinding.path, waitingFinding )
+            }
+        }
+    }
+
+    function offerFileTypeFix( imagePath, finding ) {
+        if (runSlideshowTimer === true) { return } // never interrupt a running slideshow
+        if (status !== PageStatus.Active) {
+            // the page is still animating in, keep the finding until it is on screen instead of losing it
+            pendingTroubleFinding = { "path" : imagePath, "reason" : finding.reason, "realKind" : finding.realKind,
+                                      "suggestedName" : finding.suggestedName, "fileSize" : finding.fileSize }
+            return
+        }
+        bannerFixFileTypeFromView.notify( imagePath, finding.reason, finding.realKind, finding.suggestedName, finding.fileSize, "viewPage" )
+    }
+
+    function copyImageLocation() {
+        Clipboard.text = (currentImagePath).toString()
+        // the notification object lives on FirstPage and is shared, so set every field before publishing
+        idNotificationEditSaved.isTransient = true
+        idNotificationEditSaved.urgency = Notification.Low
+        idNotificationEditSaved.summary = ""
+        idNotificationEditSaved.body = ""
+        idNotificationEditSaved.previewSummary = qsTr("Location copied")
+        idNotificationEditSaved.previewBody = currentImageInfo.fileName
+        idNotificationEditSaved.publish()
+    }
+
+    function refreshImageInfo() {
+        if (showImageInfo === false) { return } // costs nothing while the overlay is hidden
+        var infoObject = ({ "fileName" : "", "folderPath" : "", "dateText" : "", "album" : "", "isFavourite" : "false" })
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === currentImagePath) {
+                var imageItem = idListModelImages.get(i)
+                infoObject.fileName = imageItem.fileName
+                infoObject.folderPath = imageItem.folderPath
+                infoObject.dateText = imageItem.day + ". " + imageItem.monthYear + "   " + (new Date(imageItem.creationDateMS * 1000)).toLocaleTimeString(Qt.locale(), "hh:mm")
+                infoObject.album = (imageItem.album[0] === ".") ? imageItem.album.substring(1) : imageItem.album
+                infoObject.isFavourite = imageItem.isFavourite
+            }
+        }
+        currentImageInfo = infoObject
+    }
+
+    Connections {
+        // the album was just set from this viewer, a counter avoids resetting a watched value in its own handler
+        target: page
+        onAlbumAssignmentCounterChanged: {
+            refreshImageInfo() // the info overlay would otherwise keep showing the old album
+            if (albumAssignmentLeftTheView === true) {
+                idCloseAfterAlbumTimer.start() // deferred, the album banner is still finishing its click handler
+            }
+        }
+    }
+    Connections {
+        // the shown file may have just been renamed, follow it under the new name
+        target: page
+        onFileRenameCounterChanged: {
+            var updatedPathsArray = allCurrentModelImagePathsArray.slice(0) // a new array, the path binding reacts to the reference
+            var changedAny = false
+            for (var i = 0; i < updatedPathsArray.length; i++) {
+                if (updatedPathsArray[i] === lastRenamedOldPath) {
+                    updatedPathsArray[i] = lastRenamedNewPath
+                    changedAny = true
+                }
+            }
+            if (changedAny === true) {
+                allCurrentModelImagePathsArray = updatedPathsArray
+                refreshImageInfo()
+            }
+        }
+    }
+    Timer {
+        id: idCloseAfterAlbumTimer
+        interval: 1
+        onTriggered: {
+            pageStack.pop()
+        }
+    }
+
+    property string trackedEditedImagePath : lastEditedImagePath // watchdog pattern: an edit saved a new copy, show it right away
+    onTrackedEditedImagePathChanged: {
+        if (trackedEditedImagePath !== "") {
+            // swap the copy into the path array instead of assigning currentImagePath, that would break its binding and kill swiping
+            var updatedPathsArray = allCurrentModelImagePathsArray
+            updatedPathsArray[currentImageIndex] = trackedEditedImagePath
+            allCurrentModelImagePathsArray = updatedPathsArray
+        }
+    }
     property bool finishedLoadingView : false
     property real minMouseMoveXSwipeImage : Theme.itemSizeMedium
     property real flickScale : flick.contentWidth / flick.width
@@ -43,6 +184,7 @@ Page {
     backgroundColor: "black"
     Component.onCompleted: {
         viewpageActiveFocus = true
+        inspectShownImage( false )
     }
     Component.onDestruction: {
         viewpageActiveFocus = false
@@ -101,6 +243,15 @@ Page {
     }
     BannerPaint {
         id: bannerPaint
+    }
+    BannerToAlbum {
+        id: bannerToAlbumFromView
+    }
+    BannerRenameFile {
+        id: bannerRenameFileFromView
+    }
+    BannerFixFileType {
+        id: bannerFixFileTypeFromView
     }
     NumberAnimation {
         id: animateLeftListEnd
@@ -174,7 +325,7 @@ Page {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     autoTransform: true
-                    source: (reloadImage === false) ? currentImagePath : ""
+                    source: (reloadImage === false && currentImagePath !== undefined) ? currentImagePath : ""
                     cache: false
                     onStatusChanged: {
                         if (status === Image.Loading) {
@@ -185,8 +336,23 @@ Page {
                             firstTimeLoading = false
                             currentSlideshowImagePath = source
                         }
+                        else if (status === Image.Error) {
+                            // nothing can decode this file, without this the busy indicator spins forever
+                            finishedLoadingView = true
+                            firstTimeLoading = false
+                            inspectShownImage( true ) // a wrong name is fixable, real corruption is not
+                        }
                     }
 
+                    AnimatedImage {
+                        // Image only ever shows the first frame of a gif, this overlay plays the animation on top of it
+                        anchors.fill: parent
+                        visible: (currentImagePath !== undefined) && (currentImagePath.toString().toLowerCase().slice(-4) === ".gif") && (idImageView.status === Image.Ready)
+                        playing: visible
+                        fillMode: Image.PreserveAspectFit
+                        source: visible ? idImageView.source : ""
+                        cache: false
+                    }
                     MouseArea {
                         id: idMouseAreaFlick
                         enabled: flickScale !== 1 && idImageView.status !== Image.Loading
@@ -251,6 +417,12 @@ Page {
                         onReleased: {
                             limitMouseDistanceSwipe = false
                         }
+                        onClicked: {
+                            // only a real tap toggles the info overlay, not the tail end of a swipe
+                            if (Math.abs(mouseX - position.x) < Theme.paddingLarge && Math.abs(mouseY - position.y) < Theme.paddingLarge) {
+                                showImageInfo = !showImageInfo
+                            }
+                        }
                     }
 
 
@@ -266,10 +438,89 @@ Page {
                 }
             }
         }
+        Rectangle {
+            id: idImageInfoOverlay
+            visible: showImageInfo && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0) && (bannerRenameFileFromView.opacity === 0)
+            anchors.top: parent.top
+            anchors.topMargin: upperFreeHeight
+            width: parent.width
+            height: idColumnImageInfo.height + Theme.paddingLarge
+            color: Theme.rgba(Theme.overlayBackgroundColor, 0.7)
+
+            Column {
+                id: idColumnImageInfo
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width - 2*Theme.paddingLarge
+
+                // tapping the name and folder copies the full path, the rest of the overlay still toggles it shut
+                Item {
+                    width: parent.width
+                    height: idColumnImagePath.height
+
+                    Column {
+                        id: idColumnImagePath
+                        width: parent.width
+
+                        Label {
+                            width: parent.width
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.highlightColor
+                            truncationMode: TruncationMode.Fade
+                            text: currentImageInfo.fileName
+                        }
+                        Label {
+                            width: parent.width
+                            font.pixelSize: Theme.fontSizeTiny
+                            color: Theme.secondaryColor
+                            truncationMode: TruncationMode.Fade
+                            text: currentImageInfo.folderPath
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            copyImageLocation()
+                        }
+                    }
+                }
+                Label {
+                    width: parent.width
+                    font.pixelSize: Theme.fontSizeTiny
+                    color: Theme.primaryColor
+                    text: currentImageInfo.dateText
+                }
+                Label {
+                    visible: imageSourceWidth > 0
+                    width: parent.width
+                    font.pixelSize: Theme.fontSizeTiny
+                    color: Theme.primaryColor
+                    text: imageSourceWidth + " × " + imageSourceHeight
+                }
+                Row {
+                    width: parent.width
+                    spacing: Theme.paddingMedium
+
+                    Label {
+                        font.pixelSize: Theme.fontSizeTiny
+                        color: Theme.primaryColor
+                        font.bold: true
+                        text: currentImageInfo.album
+                    }
+                    Icon {
+                        visible: currentImageInfo.isFavourite === "true"
+                        width: Theme.iconSizeExtraSmall
+                        height: width
+                        anchors.verticalCenter: parent.verticalCenter
+                        source: "image://theme/icon-m-favorite-selected?"
+                    }
+                }
+            }
+        }
         IconButton {
             id: idButtonClose
             anchors.left: parent.left
-            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0) && (bannerRenameFileFromView.opacity === 0)
             height: upperFreeHeight
             width: height
             icon.scale: 1
@@ -290,6 +541,34 @@ Page {
             }
         }
         IconButton {
+            id: idButtonRenameFile
+            anchors {
+                horizontalCenter: isPortrait ? parent.horizontalCenter : parent.left
+                horizontalCenterOffset: isPortrait ? -parent.width/4 : width/2
+                verticalCenter: isPortrait ? parent.top : parent.verticalCenter
+                verticalCenterOffset: isPortrait ? height/2 : -parent.height/4
+            }
+            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0) && (bannerRenameFileFromView.opacity === 0)
+            height: upperFreeHeight
+            width: height
+            icon.scale: 1
+            icon.source: "image://theme/icon-m-note?"
+            onClicked: {
+                stopSlideshow()
+                var shownFileName = (currentImagePath.toString()).substring((currentImagePath.toString()).lastIndexOf("/") + 1)
+                bannerRenameFileFromView.notify( currentImagePath.toString(), shownFileName )
+            }
+
+            Rectangle {
+                z: -1
+                anchors.centerIn: parent
+                width: parent.width / 3*2
+                height: width
+                radius: width/2
+                color: Theme.rgba(Theme.highlightDimmerColor, 0.5)
+            }
+        }
+        IconButton {
             id: idButtonSlideshow
             anchors {
                 horizontalCenter: isPortrait ? parent.horizontalCenter : parent.left
@@ -297,7 +576,7 @@ Page {
                 verticalCenter: isPortrait ? parent.top : parent.verticalCenter
                 verticalCenterOffset: isPortrait ? height/2 : 0
             }
-            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0) && (bannerRenameFileFromView.opacity === 0)
             height: upperFreeHeight
             width: height
             //icon.scale: 1.9
@@ -331,12 +610,48 @@ Page {
             }
         }
         IconButton {
+            id: idButtonSetAlbum
+            anchors {
+                horizontalCenter: isPortrait ? parent.horizontalCenter : parent.left
+                horizontalCenterOffset: isPortrait ? parent.width/4 : width/2
+                verticalCenter: isPortrait ? parent.top : parent.verticalCenter
+                verticalCenterOffset: isPortrait ? height/2 : parent.height/4
+            }
+            visible: (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0) && (bannerRenameFileFromView.opacity === 0)
+            height: upperFreeHeight
+            width: height
+            icon.scale: 1
+            icon.source: "image://theme/icon-m-folder?"
+            onClicked: {
+                stopSlideshow()
+                // the album assignment works on the position in the main list, whichever list opened the viewer
+                var baseIndex = -1
+                for (var i = 0; i < idListModelImages.count; i++) {
+                    if (idListModelImages.get(i).filePath === currentImagePath) {
+                        baseIndex = i
+                    }
+                }
+                if (baseIndex >= 0) {
+                    bannerToAlbumFromView.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [ [0, currentImagePath, baseIndex] ], "fromViewPage", "triggeredOnViewPage" )
+                }
+            }
+
+            Rectangle {
+                z: -1
+                anchors.centerIn: parent
+                width: parent.width / 3*2
+                height: width
+                radius: width/2
+                color: Theme.rgba(Theme.highlightDimmerColor, 0.5)
+            }
+        }
+        IconButton {
             id: idButtonEdit
             anchors.right: isPortrait ? parent.right : parent.left
             anchors.rightMargin: isPortrait ? 0 : -width
             anchors.top: isPortrait ? parent.top : parent.bottom
             anchors.topMargin: isPortrait ? 0 : -height
-            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0)
+            visible: (pillowAvailable) && (flickScale === 1) && (bannerCrop.opacity === 0) && (bannerColorize.opacity === 0) && (bannerResize.opacity === 0) && (bannerTools.opacity === 0) && (bannerPaint.opacity === 0) && (bannerToAlbumFromView.opacity === 0) && (bannerRenameFileFromView.opacity === 0)
             height: upperFreeHeight
             width: height
             icon.scale: 1
@@ -379,6 +694,38 @@ Page {
             anchors.centerIn: parent
             running: finishedLoadingView === false
             size: BusyIndicatorSize.Large
+        }
+        Column {
+            // an undecodable file would otherwise be an unexplained black screen
+            visible: idImageView.status === Image.Error
+            anchors.centerIn: parent
+            width: parent.width - 4*Theme.paddingLarge
+            spacing: Theme.paddingLarge
+
+            Icon {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Theme.iconSizeLarge
+                height: width
+                source: "image://theme/icon-m-image?"
+            }
+            Label {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
+                font.pixelSize: Theme.fontSizeSmall
+                text: qsTr("This image cannot be displayed")
+            }
+            Label {
+                // the suggestion banner covers the fixable case, so say a word about this one
+                visible: text !== ""
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                text: (currentImageInfo.fileName !== undefined) ? currentImageInfo.fileName : ""
+            }
         }
     }
 
