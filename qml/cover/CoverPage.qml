@@ -38,7 +38,7 @@ CoverBackground {
         smooth: true
         autoTransform: true
         fillMode: Image.PreserveAspectCrop
-        source: (viewpageActiveFocus) ? (currentSlideshowImagePath) : (runSlideshowTimer && currentSlideshowImagePath !== undefined) ? (currentSlideshowImagePath) : (coverImagePath)
+        source: (viewpageActiveFocus && currentSlideshowImagePath !== "") ? (currentSlideshowImagePath) : (runSlideshowTimer && currentSlideshowImagePath !== undefined && currentSlideshowImagePath !== "") ? (currentSlideshowImagePath) : (coverImagePath)
         onSourceChanged: {
             opacityCoverImage.start()
         }

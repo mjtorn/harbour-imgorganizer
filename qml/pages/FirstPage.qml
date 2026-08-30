@@ -3,6 +3,7 @@ import Sailfish.Silica 1.0
 import io.thp.pyotherside 1.5
 import Nemo.Thumbnailer 1.0
 import QtFeedback 5.0 // haptic effects
+import Nemo.Notifications 1.0 // popup when an edit saved a new copy
 import Sailfish.Share 1.0
 import QtGraphicalEffects 1.0
 
@@ -16,6 +17,7 @@ Page {
     property string standardAlbum : "." + qsTr("UNSORTED")
     property string standardSearchAlbum : "." + qsTr("SEARCH")
     property string standardFavouritesAlbum : "." + qsTr("FAVOURITES")
+    property string standardDuplicatesAlbum : "." + qsTr("DUPLICATES")
     property var standardScreenWidth
     property var standardScreenHeight
     property string currentAlbum : ""
@@ -33,6 +35,31 @@ Page {
 
     // image list generation and checks against db
     property int settingUseExif : 0 //parseInt(storageItem.getSetting("infoTimeUseExifAlbum", 0))
+    property bool refreshingExifCache : false // python tells us when the exif cache gets rebuilt from scratch
+    property string deleteRequestSourcePage : "" // which page a delete came from, list cleanup happens once python reports back
+    property string currentFolderAlbumFilter : "" // when set, the opened folder view only shows images of this album
+    property string timelineAlbumFilter : "" // when set, the timeline only shows images of this album (via idListModelTimelineFiltered)
+    property int timelineSelectedTotal : 0 // selected images in the timeline while multiSelectActive
+    property string lastNotifiedImagePath : "" // tapping the notification jumps to this image in the timeline
+    property int albumAssignmentCounter : 0 // bumped after an album was set from the viewer, an open viewer reacts to the change
+    property string lastRenamedOldPath : "" // an open viewer follows a renamed file through these
+    property string lastRenamedNewPath : ""
+    property int fileRenameCounter : 0
+    property bool albumAssignmentLeftTheView : false // the image left the album filter or the album page being browsed
+    property int imageInspectionCounter : 0 // bumped when a finding arrived, the viewer reacts to the change
+    property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
+    property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
+
+    Connections {
+        // a counter avoids resetting the source inside its own change handler, which is a binding loop
+        target: idApplicationWindow
+        onNotificationTapCounterChanged: {
+            if (lastNotifiedImagePath !== "") {
+                showImageInTimeline( lastNotifiedImagePath )
+            }
+        }
+    }
+    property string timelineSortDirection : "0" // mirrors infoTimeLineDirectionIndex, "0" = newest first
     property var dbFavouritesArray : [] //storageItem.getAllStoredKeywords( "noFilesAvailable" )
     property var dbPathAlbumsArray : [] //storageItem.getAllStoredImagesAlbums( "noPathAvailable", "noInfoAvailable" )
 
@@ -129,6 +156,12 @@ Page {
     BannerResize {
         id: bannerResize
     }
+    BannerGif {
+        id: bannerGif
+    }
+    BannerRenameFile {
+        id: bannerRenameFile
+    }
     ListModel {
         id: idListModelImages
     }
@@ -185,6 +218,28 @@ Page {
     ListModel {
         id: idListModelFavourites
     }
+    ListModel {
+        id: idListModelTimelineFiltered
+    }
+    Notification {
+        id: idNotificationEditSaved
+        isTransient: true // the gif-created publish flips this off so its notification stays tappable in the events view
+        urgency: Notification.Low
+        // tapping the notification is a dbus remote action, the call lands in the DBusAdaptor in harbour-timeline.qml
+        remoteActions: [ {
+            "name": "default",
+            "service": "harbour.timeline",
+            "path": "/harbour/timeline",
+            "iface": "harbour.timeline",
+            "method": "openNotifiedImage"
+        } ]
+    }
+    ListModel {
+        id: idListModelDuplicates
+    }
+    ListModel {
+        id: idListModelAlbumTree
+    }
     ShareAction {
         id: shareActionZip
         mimeType: "application/zip"
@@ -228,24 +283,27 @@ Page {
                 currentlyScannedImage = someCounter
                 maxScannedImages = imagesTotalAmount
             });
+            setHandler('refreshingExifCache', function() {
+                refreshingExifCache = true
+            });
             setHandler('returnSortedImageList2Model', function(fileList) {
                 //idListModelImages.clear()
                 //idListModelImagesAlbum.clear()
 
+                // build lookup maps once instead of scanning the db arrays for every single image
+                var monthNamesArray = [ qsTr("January"), qsTr("February"), qsTr("March"), qsTr("April"), qsTr("May"), qsTr("June"), qsTr("July"), qsTr("August"), qsTr("September"), qsTr("October"), qsTr("November"), qsTr("December") ]
+                var favouritesMap = ({})
+                for (var j = 0; j < dbFavouritesArray.length; j++) {
+                    favouritesMap[dbFavouritesArray[j]] = true
+                }
+                var albumsMap = ({})
+                for (j = 0; j < dbPathAlbumsArray.length; j++) {
+                    albumsMap[dbPathAlbumsArray[j][0]] = dbPathAlbumsArray[j][1]
+                }
+
                 // now go through file list and add all info
                 for(var i = 0; i < fileList.length; i++) {
-                    if (fileList[i][3] === 1) { var month2text = qsTr("January") }
-                    else if (fileList[i][3] === 2) { month2text = qsTr("February") }
-                    else if (fileList[i][3] === 3) { month2text = qsTr("March") }
-                    else if (fileList[i][3] === 4) { month2text = qsTr("April") }
-                    else if (fileList[i][3] === 5) { month2text = qsTr("May") }
-                    else if (fileList[i][3] === 6) { month2text = qsTr("June") }
-                    else if (fileList[i][3] === 7) { month2text = qsTr("July") }
-                    else if (fileList[i][3] === 8) { month2text = qsTr("August") }
-                    else if (fileList[i][3] === 9) { month2text = qsTr("September") }
-                    else if (fileList[i][3] === 10) { month2text = qsTr("October") }
-                    else if (fileList[i][3] === 11) { month2text = qsTr("November") }
-                    else if (fileList[i][3] === 12) { month2text = qsTr("December") }
+                    var month2text = monthNamesArray[fileList[i][3]-1]
                     var newPathArray = fileList[i][1].split("/")
                     var folderPath = (newPathArray.slice(0, newPathArray.length-1)).join("/") + "/"
                     var fileName = newPathArray.slice(-1)[0]
@@ -253,20 +311,10 @@ Page {
                     var exifAlbum = fileList[i][6]
 
                     // check if image is a favourite in DB
-                    var isFavourite = "false"
-                    for (var j = 0; j < dbFavouritesArray.length; j++) {
-                        if (dbFavouritesArray[j] === fileList[i][1]) {
-                            isFavourite = "true"
-                        }
-                    }
+                    var isFavourite = (favouritesMap[fileList[i][1]] === true) ? "true" : "false"
 
                     // check if image has album assigned in DB
-                    var inAlbum = standardAlbum
-                    for (j = 0; j < dbPathAlbumsArray.length; j++) {
-                        if (dbPathAlbumsArray[j][0] === fileList[i][1]) {
-                            inAlbum = dbPathAlbumsArray[j][1]
-                        }
-                    }
+                    var inAlbum = (albumsMap[fileList[i][1]] !== undefined) ? albumsMap[fileList[i][1]] : standardAlbum
 
                     // overwrite this value in case album taken from EXIF
                     if ( (settingUseExif !== 0) && (exifAlbum !== "|||") ) {
@@ -309,18 +357,36 @@ Page {
                     }
                 }
 
+                // duplicates results survive the rescan, drop vanished files and refresh the stored positions first
+                remapBaseIndexes()
+
                 // re-count items still left, search results should be kept
                 countDistinctAlbums()
                 countDistinctFolders()
                 randomizeDistinctFoldersArray()
                 randomCoverImage()
+
+                // re-fill a folder or album grid that may still be open, a rescan cleared its model and only rebuilt the main lists
+                if (currentFolder !== "") { getImagesInFolder(currentFolder) }
+                if (currentAlbum !== "") { getImagesInAlbum(currentAlbum) }
+
                 fileList = []
                 dbFavouritesArray = []
                 dbPathAlbumsArray = []
                 finishedLoading = true //done creating list models
-            });
-            setHandler('goToDateIndex', function( targetListIndex ) {
-                idListViewTimeline.positionViewAtIndex( targetListIndex, ListView.Center)
+
+                // a notification tap may have arrived while this scan was still running
+                if (pendingTimelineJumpPath !== "") {
+                    var retryJumpPath = pendingTimelineJumpPath
+                    pendingTimelineJumpPath = ""
+                    showImageInTimeline( retryJumpPath )
+                }
+
+                // "Refresh duplicates" wants the duplicate search run against the fresh scan
+                if (pendingDuplicateSearch === true) {
+                    pendingDuplicateSearch = false
+                    runDuplicateSearch()
+                }
             });
             setHandler('returnEXIFinfoList', function( exifInfoList, availableExifInfosList, filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ) {
                 pageStack.animatorPush(fileDetailPage, {
@@ -338,9 +404,6 @@ Page {
                                            isFavourite : isFavourite
                 })
                 //console.log(availableExifInfosList)
-            });
-            setHandler('finishedRenaming', function( newPath ) {
-                console.log( newPath )
             });
             setHandler('removeEntryFromDB', function( inWhichTable, filePath ) {
                 if (inWhichTable === "inAlbumTable") {
@@ -389,10 +452,120 @@ Page {
                     finishedLoading = true
                 }
             });
-            setHandler('filesDeleted', function() {
-                //console.log("more than " + imagesWorkload2Rescan + " images got deleted, triggering rescan...")
-                clearAllLists()
-                py.scanForImages()
+            setHandler('returnDeletedFiles', function(deletedPathArray, failedPathArray) {
+                if (failedPathArray.length > 0) {
+                    console.log("could not delete " + failedPathArray.length + " file(s): " + failedPathArray)
+                }
+                removeDeletedFilesFromLists(deletedPathArray)
+            });
+            setHandler('returnDuplicateImages', function(duplicateGroups, distanceFromReference) {
+                idListModelDuplicates.clear()
+                var pathIndexMap = ({})
+                for (var i = 0; i < idListModelImages.count; i++) {
+                    pathIndexMap[idListModelImages.get(i).filePath] = i
+                }
+                for (var g = 0; g < duplicateGroups.length; g++) {
+                    for (var m = 0; m < duplicateGroups[g].length; m++) {
+                        var baseIndex = pathIndexMap[duplicateGroups[g][m]]
+                        if (baseIndex !== undefined) {
+                            var imageItem = idListModelImages.get(baseIndex)
+                            idListModelDuplicates.append({
+                                "creationDateMS" : imageItem.creationDateMS,
+                                "filePath" : imageItem.filePath,
+                                "monthYear" : imageItem.monthYear,
+                                "day" : imageItem.day,
+                                "folderPath" : imageItem.folderPath,
+                                "fileName" : imageItem.fileName,
+                                "estimatedSize" : imageItem.estimatedSize,
+                                "album" : imageItem.album,
+                                "selected" : false,
+                                "exifInfo" :  imageItem.album,
+                                "isSearchResult" : false,
+                                "timestampSource" : imageItem.timestampSource,
+                                "isFavourite" : imageItem.isFavourite,
+                                "listModelImages_baseIndex" : baseIndex,
+                                "duplicateGroup" : g,
+                                "duplicateDistance" : (distanceFromReference[duplicateGroups[g][m]] !== undefined) ? distanceFromReference[duplicateGroups[g][m]] : -1
+                            })
+                        }
+                    }
+                }
+                dropLonelyDuplicateGroups() // a member may not be in the main list at all
+                countDistinctAlbums()
+                // an open DUPLICATES album page shows idListModelImagesAlbum, re-fill it with the fresh results
+                if (currentAlbum === standardDuplicatesAlbum) {
+                    getImagesInAlbum( standardDuplicatesAlbum )
+                }
+                finishedLoading = true
+            });
+            setHandler('imageFileInspected', function(filePath, reason, realKind, suggestedName, fileSize) {
+                var updatedFindings = ({})
+                for (var knownPath in inspectedImageFiles) {
+                    updatedFindings[knownPath] = inspectedImageFiles[knownPath]
+                }
+                updatedFindings[filePath] = { "reason" : reason, "realKind" : realKind, "suggestedName" : suggestedName, "fileSize" : fileSize }
+                inspectedImageFiles = updatedFindings // a fresh object, so anything bound to it re-evaluates
+                imageInspectionCounter = imageInspectionCounter + 1 // a counter, never a bool reset in its own handler
+            });
+            setHandler('returnRenamedFile', function(oldPath, newPath, errorReason) {
+                if (errorReason !== "") { // nothing was renamed, the original keeps its name
+                    lastNotifiedImagePath = ""
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = (errorReason === "exists") ? qsTr("Name already taken") : qsTr("Rename failed")
+                    idNotificationEditSaved.previewBody = ""
+                    idNotificationEditSaved.publish()
+                }
+                else {
+                    renameFileInAllLists( oldPath, newPath )
+                }
+            });
+            setHandler('gifCreated', function(gifPath) {
+                if (gifPath === "") { // failed, nothing was created and no source image was touched
+                    finishedLoading = true
+                    lastNotifiedImagePath = ""
+                    idNotificationEditSaved.isTransient = true
+                    idNotificationEditSaved.urgency = Notification.Low
+                    idNotificationEditSaved.summary = ""
+                    idNotificationEditSaved.body = ""
+                    idNotificationEditSaved.previewSummary = qsTr("GIF creation failed")
+                    idNotificationEditSaved.previewBody = ""
+                    idNotificationEditSaved.publish()
+                }
+                else {
+                    if (pendingGifAlbum !== "") {
+                        storageItem.addAlbum(gifPath, pendingGifAlbum)
+                    }
+                    pendingGifAlbum = ""
+                    lastNotifiedImagePath = gifPath
+                    idNotificationEditSaved.isTransient = false // stays in the events view, tapping it jumps to the gif
+                    idNotificationEditSaved.urgency = Notification.Normal // low urgency would not show a banner for a non-transient notification
+                    idNotificationEditSaved.summary = qsTr("GIF created")
+                    idNotificationEditSaved.body = gifPath.split("/").pop()
+                    idNotificationEditSaved.previewSummary = qsTr("GIF created")
+                    idNotificationEditSaved.previewBody = gifPath.split("/").pop()
+                    idNotificationEditSaved.publish()
+                    clearAllLists()
+                    py.scanForImages()
+                }
+            });
+            setHandler('editedImageSaved', function(copyPath) {
+                lastEditedImagePath = copyPath
+                lastNotifiedImagePath = ""
+                idNotificationEditSaved.isTransient = true
+                idNotificationEditSaved.urgency = Notification.Low
+                idNotificationEditSaved.summary = ""
+                idNotificationEditSaved.body = ""
+                idNotificationEditSaved.previewSummary = qsTr("Saved as new copy")
+                idNotificationEditSaved.previewBody = copyPath.split("/").pop()
+                idNotificationEditSaved.publish()
+                // bring the copy into all lists, the guard keeps a bulk edit from stacking rescans
+                if (finishedLoading === true) {
+                    clearAllLists()
+                    py.scanForImages()
+                }
             });
             setHandler('updateImage', function() {
                 reloadImage = true
@@ -466,7 +639,10 @@ Page {
         // file operations
         function scanForImages() {
             finishedLoading = false
+            refreshingExifCache = false
             runSlideshowTimer = false
+            timelineAlbumFilter = "" // a rescan rebuilds the main list, stored filter indexes would go stale
+            idListModelTimelineFiltered.clear()
             // the following part could also be included on the receiving end but saves some time if done here
             idListModelImages.clear()
             idListModelImagesAlbum.clear()
@@ -482,6 +658,7 @@ Page {
             }
             var sdCards2scanEXTERN = (storageItem.getSetting("sdCards2scanEXTERN", "1|||1|||1")).split("|||")
             var showDirection = storageItem.getSetting("infoTimeLineDirectionIndex", "0")
+            timelineSortDirection = showDirection
             var creationModificationDate = parseInt(storageItem.getSetting("infoTimeCreationModification", 0))
             var showHiddenFiles = parseInt(storageItem.getSetting("infoTimeHiddenFiles", 0))
             settingUseExif = parseInt(storageItem.getSetting("infoTimeUseExifAlbum", 0)) // 0 = no scanning, saves time // 1 = metadata // 2= filename parsing and metadata
@@ -490,25 +667,20 @@ Page {
         function getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite) {
             call("timelinex.getEXIFdata", [ filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite ])
         }
-        function findClosestDate( targetDate ) {
-            var datesItems = []
-            for (var k = 0; k < idListModelImages.count; k++) {
-                //console.log(idListModelImages.get(k).creationDateMS)
-                datesItems.push(idListModelImages.get(k).creationDateMS)
-            }
-            var thisDateLocale = new Date(targetDate).toLocaleDateString(Qt.locale("de_DE"), "dd. MMMM yyyy") // weekday "dddd"
-            var thisDateMS = new Date(targetDate).getTime() / 1000
-            //console.log(thisDateLocale)
-            //console.log(thisDateMS)
-            call("timelinex.findClosestDate", [datesItems, thisDateMS])
+        function deleteFilesFunction( deletePathArray ) {
+            call("timelinex.deleteFilesFunction", [ deletePathArray ])
         }
-        function deleteFilesFunction( deletePathArray, imagesWorkload2Rescan ) {
-            call("timelinex.deleteFilesFunction", [ deletePathArray, imagesWorkload2Rescan ])
+        function findDuplicateImages( allPathsArray, tolerance ) {
+            call("timelinex.findDuplicateImages", [ allPathsArray, tolerance ])
         }
-        function renameOriginalFunction( currentPath ) {
-            //var currentPath = "/" + origImageFilePath.replace(/^(file:\/{3})|(qrc:\/{2})|(http:\/{2})/,"")
-            //var newPath = "some_path.new"
-            //call("graphx.renameOriginalFunction", [ currentPath, newPath ])
+        function createAnimatedGif( gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ) {
+            call("timelinex.createAnimatedGif", [ gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ])
+        }
+        function inspectImageFile( filePath, deepCheck ) {
+            call("timelinex.inspectImageFile", [ filePath, deepCheck ])
+        }
+        function renameImageFile( oldPath, targetStorageMedia, targetFolder, newFileName ) {
+            call("timelinex.renameImageFile", [ oldPath, targetStorageMedia, targetFolder, newFileName ])
         }
         function checkDB_fileExistance() {
             // clear empty entries from "album" table
@@ -535,10 +707,12 @@ Page {
             call("timelinex.getAmountExtPartitions", [])
         }
         function insertMetadataKeywords ( tags, filePath ) {
+            if (infoStrictReadOnly !== 0) { return } // strict read-only mode never writes into image files
             var storeWhere = "in_IPTC"
             call("timelinex.insertMetadataKeywords", [ tags, filePath, storeWhere ])
         }
         function removeMetadataKeywords ( filePath ) {
+            if (infoStrictReadOnly !== 0) { return } // strict read-only mode never writes into image files
             var storeWhere = "in_IPTC"
             call("timelinex.removeMetadataKeywords", [ filePath, storeWhere ])
         }
@@ -549,12 +723,25 @@ Page {
             }
         }
         function editEXIFdata ( filePath, ifdZone, tagNr, tagName, tagValue ) {
+            if (infoStrictReadOnly !== 0) { return } // strict read-only mode never writes into image files
             //finishedLoading = false
             call("timelinex.editEXIFdata", [ filePath, ifdZone, tagNr, tagName, tagValue ])
         }
 
         onError: {
-            //console.log('python error: ' + traceback) //when an exception is raised, this error handler will be called
+            // a python exception used to vanish here, leaving every busy indicator spinning for ever
+            // because the flags are only ever cleared by the handler of a result that never arrives
+            console.log('python error: ' + traceback)
+            finishedLoading = true
+            refreshingExifCache = false
+            // the notification object is shared, so set every field before publishing
+            idNotificationEditSaved.isTransient = true
+            idNotificationEditSaved.urgency = Notification.Low
+            idNotificationEditSaved.summary = ""
+            idNotificationEditSaved.body = ""
+            idNotificationEditSaved.previewSummary = qsTr("That did not work")
+            idNotificationEditSaved.previewBody = ""
+            idNotificationEditSaved.publish()
         }
         onReceived: {
             //console.log('got message from python: ' + data) //asychronous messages from Python arrive here; done there via pyotherside.send()
@@ -566,13 +753,24 @@ Page {
         id: idSilicaFlickableFirstPage
         anchors.fill: parent
         anchors.bottomMargin: idFooterRow.height
+        // horizontal drag room for side-swiping between the views, vertical scrolling stays with the views themselves
+        flickableDirection: Flickable.HorizontalFlick
+        contentWidth: width * 3
+        contentHeight: height
+        onWidthChanged: contentX = width // also re-centers on orientation changes
+        onMovementEnded: {
+            if (contentX > width + width / 4) { switchViewBySwipe(1) }
+            else if (contentX < width - width / 4) { switchViewBySwipe(-1) }
+            contentX = width
+        }
 
         SilicaListView {
             id: idListViewTimeline
             visible: currentView === "timeline"
             enabled: visible
-            width: parent.width
-            height: parent.height
+            x: idSilicaFlickableFirstPage.width // the middle slot of the horizontal drag room is the resting position
+            width: idSilicaFlickableFirstPage.width
+            height: idSilicaFlickableFirstPage.height
             clip: true
             spacing: Theme.paddingSmall
             quickScroll: false
@@ -591,7 +789,7 @@ Page {
                 topPadding: (isPortrait) ? upperFreeHeight : 0
                 bottomPadding: (isPortrait) ? upperFreeHeight/3 : 0
                 labelModelTag: "monthYear"
-                visible: (parent.visibleArea.heightRatio < 1.0) && (idPulldownMenu.active === false) && (delegateMenuOpen === false)
+                visible: (parent.visibleArea.heightRatio < 1.0) && (idPulldownMenu.active === false) && (idPushUpMenu.active === false) && (delegateMenuOpen === false)
             }
             PullDownMenu {
                 id: idPulldownMenu
@@ -599,12 +797,37 @@ Page {
                 enabled: finishedLoading === true
 
                 MenuItem {
-                    text: qsTr("Date")
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, picks up images that arrived outside the app and re-counts albums and folders
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
+                MenuItem {
+                    text: qsTr("Jump to Date")
                     onClicked: {
                         var dialog = pageStack.push(datePickerComponent, { })
                         dialog.accepted.connect( function () {
-                            py.findClosestDate(dialog.date)
+                            jumpToDate(dialog.date)
                         } )
+                    }
+                }
+                MenuItem {
+                    text: (timelineSortDirection === "0") ? qsTr("Show oldest first") : qsTr("Show newest first")
+                    onClicked: {
+                        reverseTimelineOrder()
+                    }
+                }
+                MenuItem {
+                    text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
+                    onClicked: {
+                        if (timelineAlbumFilter !== "") {
+                            clearTimelineAlbumFilter()
+                        }
+                        else {
+                            bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromTimeline", "triggeredOnFirstPage", true )
+                        }
                     }
                 }
 
@@ -625,7 +848,7 @@ Page {
                 leftPadding: rightPadding
                 color: finishedLoading ? Theme.highlightColor : Theme.secondaryHighlightColor
                 elide: Text.ElideRight
-                text: (currentlyScannedImage + "/" + maxScannedImages)
+                text: (refreshingExifCache ? qsTr("Refreshing EXIF cache") + " " : "") + (currentlyScannedImage + "/" + maxScannedImages)
             }
 
             section.property: ("monthYear")
@@ -643,16 +866,29 @@ Page {
                 font.pixelSize: Theme.fontSizeMedium
             }
 
-            model: idListModelImages
+            model: (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
             delegate: ListItem {
                 width: parent.width
                 contentHeight: Math.max( idListRowTimelineDescription.height, minimumTimelineListItemHeight - Theme.paddingSmall )
                 contentWidth: (idListViewTimeline.visibleArea.heightRatio < 1.0) ? (parent.width - Theme.paddingLarge*2) : (parent.width)
                 onClicked:  {
+                    // when multiselection is active a tap toggles the selection instead of opening the image
+                    if (multiSelectActive === true) {
+                        if (selected) {
+                            selected = false
+                            timelineSelectedTotal = timelineSelectedTotal - 1
+                        }
+                        else {
+                            selected = true
+                            timelineSelectedTotal = timelineSelectedTotal + 1
+                        }
+                        return
+                    }
                     var currentImageIndex = index
+                    var currentTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
                     var allCurrentModelImagePathsArray = []
-                    for (var j = 0; j < idListModelImages.count; j++) {
-                        allCurrentModelImagePathsArray.push(idListModelImages.get(j).filePath)
+                    for (var j = 0; j < currentTimelineModel.count; j++) {
+                        allCurrentModelImagePathsArray.push(currentTimelineModel.get(j).filePath)
                     }
                     pageStack.animatorPush(viewPage, {
                                                upperFreeHeight : upperFreeHeight,
@@ -664,75 +900,152 @@ Page {
                 function removeFile( filePathArray ) {
                     remorseAction(qsTr("Delete file?"), function() {
                         deleteThisImage( filePathArray, "firstPage" )
+                        unselectAll()
                     })
                 }
 
                 menu: Component {
                     ContextMenu {
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Set Album")
                             onClicked: {
                                 var chosenFilesArray = []
-                                chosenFilesArray.push([0,filePath,index])
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            var rowBaseIndex = (timelineAlbumFilter !== "") ? activeTimelineModel.get(j).listModelImages_baseIndex : j
+                                            chosenFilesArray.push( [0, activeTimelineModel.get(j).filePath, rowBaseIndex] )
+                                            activeTimelineModel.setProperty(j, "selected", false)
+                                        }
+                                    }
+                                    multiSelectActive = false
+                                    timelineSelectedTotal = 0
+                                }
+                                else {
+                                    // with an active filter the delegate index is not the index into idListModelImages
+                                    var baseIndex = (timelineAlbumFilter !== "") ? model.listModelImages_baseIndex : index
+                                    chosenFilesArray.push([0,filePath,baseIndex])
+                                }
                                 bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, chosenFilesArray, "fromTimeline", "triggeredOnFirstPage" )
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: (isFavourite !== "true") ? qsTr("Set Favourite") : qsTr("From Favourite")
                             onClicked: {
-                                if (isFavourite !== "true") { // add to favourites
+                                // only use isFavourite info from the item currently touched
+                                if (isFavourite !== "true") {
                                     var updateType = "addFavourite"
-                                    idListModelFavourites.append({
-                                                         "creationDateMS" : creationDateMS,
-                                                         "filePath" : filePath,
-                                                         "monthYear" : monthYear,
-                                                         "day" : day,
-                                                         "folderPath" : folderPath,
-                                                         "fileName" : fileName,
-                                                         "estimatedSize" : estimatedSize,
-                                                         "album" : album,
-                                                         "selected" : false,
-                                                         "exifInfo" :  album,
-                                                         "isSearchResult" : false,
-                                                         "timestampSource" : timestampSource,
-                                                         "isFavourite" : "true",
-                                                         "listModelImages_baseIndex" : index
-                                                     })
                                 }
-                                else { // remove from favourites
+                                else {
                                     updateType = "removeFavourite"
                                 }
                                 var chosenFilesArray = []
-                                chosenFilesArray.push(filePath)
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            chosenFilesArray.push(activeTimelineModel.get(j).filePath)
+                                            addTimelineRowToFavourites(activeTimelineModel, j, updateType)
+                                        }
+                                    }
+                                }
+                                else {
+                                    chosenFilesArray.push(filePath)
+                                    var singleModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    addTimelineRowToFavourites(singleModel, index, updateType)
+                                }
                                 updateAllLists_isFavourite ("fromFirstPage" , updateType, chosenFilesArray)
+                                if (multiSelectActive === true) {
+                                    unselectAll()
+                                }
                             }
                         }
                         MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
                             text: qsTr("Open with")
                             onClicked: {
                                 Qt.openUrlExternally("file:///" + filePath)
                             }
                         }
                         MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Share")
                             ShareAction {
                                 id: shareAction
                                 mimeType: "image/*"
                             }
                             onClicked: {
-                                shareAction.resources = [filePath]
+                                var sharePathsArray = []
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            sharePathsArray.push(activeTimelineModel.get(j).filePath)
+                                        }
+                                    }
+                                }
+                                else {
+                                    sharePathsArray.push(filePath)
+                                }
+                                shareAction.resources = sharePathsArray
                                 shareAction.trigger()
                             }
                         }
                         MenuItem {
+                            enabled: pillowAvailable && multiSelectActive && timelineSelectedTotal > 1
+                            visible: enabled
+                            text: qsTr("Create animated gif")
+                            onClicked: {
+                                var gifPathsArray = []
+                                var gifAlbumsArray = []
+                                var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                for (var j = 0; j < activeTimelineModel.count; j++) {
+                                    if (activeTimelineModel.get(j).selected === true) {
+                                        gifPathsArray.push(activeTimelineModel.get(j).filePath)
+                                        gifAlbumsArray.push(activeTimelineModel.get(j).album)
+                                    }
+                                }
+                                bannerGif.notify( gifPathsArray, decideGifAlbum(gifAlbumsArray) )
+                            }
+                        }
+                        MenuItem {
+                            visible: (multiSelectActive === false) || (timelineSelectedTotal > 0)
+                            enabled: visible
                             text: qsTr("Delete")
                             onClicked: {
                                 var chosenFilesArray = []
-                                chosenFilesArray.push(filePath)
+                                if (multiSelectActive === true) {
+                                    var activeTimelineModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+                                    for (var j = 0; j < activeTimelineModel.count; j++) {
+                                        if (activeTimelineModel.get(j).selected === true) {
+                                            chosenFilesArray.push(activeTimelineModel.get(j).filePath)
+                                        }
+                                    }
+                                }
+                                else {
+                                    chosenFilesArray.push(filePath)
+                                }
                                 removeFile( chosenFilesArray )
                             }
                         }
                         MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
+                            text: qsTr("Rename")
+                            onClicked: {
+                                bannerRenameFile.notify( filePath, fileName )
+                            }
+                        }
+                        MenuItem {
+                            enabled: multiSelectActive === false
+                            visible: enabled
                             text: qsTr("Info")
                             onClicked: {
                                 idImageSizeHelper.source = ""
@@ -740,6 +1053,20 @@ Page {
                                 var imageWidth = idImageSizeHelper.sourceSize.width
                                 var imageHeight = idImageSizeHelper.sourceSize.height
                                 py.getEXIFdata( filePath, creationDateMS, monthYear, day, folderPath, fileName, estimatedSize, album, imageWidth, imageHeight, timestampSource, isFavourite )
+                            }
+                        }
+                        MenuItem {
+                            text: (multiSelectActive === true) ? qsTr("Stop selecting") : qsTr("Selection")
+                            onClicked: {
+                                if (multiSelectActive === true) {
+                                    unselectAll()
+                                }
+                                else {
+                                    // start selecting right here, with the long-tapped image already selected
+                                    multiSelectActive = true
+                                    selected = true
+                                    timelineSelectedTotal = timelineSelectedTotal + 1
+                                }
                             }
                         }
                     }
@@ -772,6 +1099,34 @@ Page {
                         asynchronous: true
                         cache: false
 
+                        Image {
+                            // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                            id: idImageTimelineFallback
+                            anchors.fill: parent
+                            visible: idImageTimeline.status === Image.Error
+                            source: (idImageTimeline.status === Image.Error) ? filePath : ""
+                            sourceSize.width: parent.width
+                            sourceSize.height: parent.height
+                            autoTransform: true
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                        }
+                        Icon {
+                            // nothing could be decoded at all, a marker beats an empty square - opening it explains why
+                            visible: idImageTimelineFallback.status === Image.Error
+                            anchors.centerIn: parent
+                            width: parent.width / 3
+                            height: width
+                            source: "image://theme/icon-m-image?"
+                        }
+                        Rectangle {
+                            id: idBackHighlightTimeline
+                            visible: selected
+                            anchors.fill: parent
+                            color: Theme.highlightDimmerColor
+                            opacity: 0.5
+                        }
                         Icon {
                             id: idIconFavourites
                             visible: isFavourite === "true"
@@ -824,8 +1179,9 @@ Page {
             id: idGridViewAlbums
             visible: currentView === "album"
             enabled: visible
-            width: parent.width
-            height: parent.height
+            x: idSilicaFlickableFirstPage.width
+            width: idSilicaFlickableFirstPage.width
+            height: idSilicaFlickableFirstPage.height
             clip: true
             cellWidth: minimumTimelineListItemHeight
             cellHeight: cellWidth
@@ -838,7 +1194,7 @@ Page {
                 leftPadding: rightPadding
                 color: finishedLoading ? Theme.highlightColor : Theme.secondaryHighlightColor
                 elide: Text.ElideRight
-                text: finishedLoading ? (idListModelImages.count) : (currentlyScannedImage + "/" + maxScannedImages)
+                text: finishedLoading ? (idListModelImages.count) : ((refreshingExifCache ? qsTr("Refreshing EXIF cache") + " " : "") + currentlyScannedImage + "/" + maxScannedImages)
             }
             footer: Item {
                 width: parent.width
@@ -849,6 +1205,20 @@ Page {
                 quickSelect: true
                 enabled: finishedLoading === true
 
+                MenuItem {
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, same as the timeline and folder views offer
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
+                MenuItem {
+                    text: qsTr("Find duplicates")
+                    onClicked: {
+                        runDuplicateSearch()
+                    }
+                }
                 MenuItem {
                     text: qsTr("Search")
                     onClicked: {
@@ -863,12 +1233,18 @@ Page {
                 size: BusyIndicatorSize.Large
             }
 
-            model: idListModelAlbums
+            model: idListModelAlbumTree
             delegate: GridItem {
+                enabled: is_filler === false
                 contentWidth: minimumTimelineListItemHeight - Theme.paddingSmall
                 contentHeight: contentWidth
                 contentX: Theme.paddingSmall / 2
                 onClicked: {
+                    // a group square expands or collapses its sub-albums instead of opening
+                    if (is_group === true) {
+                        toggleAlbumGroup( album_name )
+                        return
+                    }
                     if (album_name !== standardSearchAlbum) {
                         var showSearchText = ""
                     }
@@ -898,6 +1274,7 @@ Page {
 
                 menu: Component {
                     ContextMenu {
+                        hasContent: is_filler === false // groups offer Rename, fillers do nothing
                         onActiveChanged: { // bugfix: stop idCoverImageChangeTimer, otherwise it closes when image changes
                             if (active) { // when menu opened
                                 idCoverImageChangeTimer.stop()
@@ -907,29 +1284,31 @@ Page {
                         }
 
                         MenuItem {
-                            visible: (album_name !== standardAlbum && album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum )
+                            visible: (album_name !== standardAlbum && album_name !== standardSearchAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum )
                             text: qsTr("Rename")
-                            onClicked: bannerRename.notify( Theme.highlightDimmerColor, album_name )
+                            onClicked: bannerRename.notify( Theme.highlightDimmerColor, album_name, is_group ) // renaming a group re-prefixes its whole subtree
                         }
                         MenuItem {
-                            visible: (album_name !== standardAlbum)
+                            visible: (album_name !== standardAlbum) && (is_group === false)
                             text: qsTr("Clear")
                             onClicked: clear ( album_name, album_count )
                         }
                         MenuItem {
+                            visible: is_group === false
                             text: qsTr("Share as ZIP")
                             onClicked: {
                                 getAllPathsInAlbumOrFolder("albums", album_name, "createZip")
                             }
                         }
                         MenuItem {
-                            visible: pillowAvailable
+                            visible: pillowAvailable && (is_group === false)
                             text: qsTr("Resize")
                             onClicked: {
                                 getAllPathsInAlbumOrFolder("albums", album_name, "bulkResize")
                             }
                         }
                         MenuItem {
+                            visible: is_group === false
                             text: qsTr("Delete")
                             onClicked: {
                                 deleteTheseFiles ("albums", album_name, "deleteFiles")
@@ -939,9 +1318,10 @@ Page {
                 }
 
                 Rectangle {
+                    visible: is_filler === false // filler squares stay empty
                     anchors.fill: parent
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: (album_name !== standardSearchAlbum && album_name !== standardAlbum && album_name !== standardFavouritesAlbum) ? (Theme.rgba(Theme.primaryColor, 0.15)) : (Theme.secondaryHighlightColor) }
+                        GradientStop { position: 0.0; color: (album_name !== standardSearchAlbum && album_name !== standardAlbum && album_name !== standardFavouritesAlbum && album_name !== standardDuplicatesAlbum) ? (Theme.rgba(Theme.primaryColor, 0.15)) : (Theme.secondaryHighlightColor) }
                         GradientStop { position: 1; color: Theme.rgba(Theme.primaryColor, 0.02) }
                     }
 
@@ -959,6 +1339,19 @@ Page {
                         fillMode: Image.PreserveAspectCrop
                         source: ((random_image !== undefined) && (random_image !== "") ) ? ("image://nemoThumbnail/" + random_image) : ""
                         //onSourceChanged: opacityAlbumImage.start()
+
+                        Image {
+                            // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                            anchors.fill: parent
+                            visible: idCoverAlbum.status === Image.Error
+                            source: (idCoverAlbum.status === Image.Error) ? random_image : ""
+                            sourceSize.width: parent.width
+                            sourceSize.height: parent.height
+                            autoTransform: true
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                        }
                     }
                     Image {
                         visible: infoActivateCoverImages !== 0 && finishedLoading
@@ -981,7 +1374,7 @@ Page {
                     }
                 }
                 Label {
-                    visible: !idCoverAlbum.visible
+                    visible: !idCoverAlbum.visible && is_filler === false
                     anchors.fill: parent
                     anchors.bottomMargin: 0
                     horizontalAlignment: Text.AlignHCenter
@@ -991,16 +1384,14 @@ Page {
                     text: album_count
                 }
                 Label {
-                    visible: !idCoverAlbum.visible
+                    visible: !idCoverAlbum.visible && is_filler === false
                     width: parent.width
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: infoWidthDevider === 2 ? (parent.height/6) : (infoWidthDevider === 3 ? parent.height/7 : parent.height/12)
                     truncationMode: TruncationMode.Elide
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: infoWidthDevider === 2 ? Theme.fontSizeSmall : Theme.fontSizeExtraSmall
-                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum))
-                          ? (album_name.substring(1))
-                          : (album_name)
+                    text: display_name
                 }
                 Label {
                     visible: album_name === standardSearchAlbum && !idCoverAlbum.visible
@@ -1020,9 +1411,7 @@ Page {
                     truncationMode: TruncationMode.Elide
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: infoWidthDevider === 2 ? Theme.fontSizeMedium : Theme.fontSizeExtraSmall
-                    text: (album_name[0] === "." && (album_name === standardAlbum || album_name === standardFavouritesAlbum || album_name === standardSearchAlbum))
-                          ? ( (album_name.substring(1)) + " - " + album_count )
-                          : ( album_name + " - " + album_count )
+                    text: display_name + " - " + album_count
                     Rectangle {
                         z: -1
                         visible: idCoverAlbum.visible
@@ -1041,8 +1430,9 @@ Page {
             id: idListViewFolders
             visible: currentView === "folder"
             enabled: visible
-            width: parent.width
-            height: parent.height
+            x: idSilicaFlickableFirstPage.width
+            width: idSilicaFlickableFirstPage.width
+            height: idSilicaFlickableFirstPage.height
             spacing: Theme.paddingSmall
             clip: true
             header: Label {
@@ -1053,7 +1443,7 @@ Page {
                 rightPadding: Theme.paddingLarge // * 2
                 leftPadding: rightPadding
                 color: finishedLoading ? Theme.highlightColor : Theme.secondaryHighlightColor
-                text: finishedLoading ? (idListModelImages.count + " | " + idListModelFolders.count) : (currentlyScannedImage + "/" + maxScannedImages)
+                text: finishedLoading ? (idListModelImages.count + " | " + idListModelFolders.count) : ((refreshingExifCache ? qsTr("Refreshing EXIF cache") + " " : "") + currentlyScannedImage + "/" + maxScannedImages)
             }
             footer: Item {
                 width: parent.width
@@ -1064,6 +1454,14 @@ Page {
                 quickSelect: true
                 enabled: finishedLoading === true
 
+                MenuItem {
+                    text: qsTr("Refresh")
+                    onClicked: {
+                        // full rescan, picks up images that arrived outside the app and re-counts albums and folders
+                        clearAllLists()
+                        py.scanForImages()
+                    }
+                }
                 MenuItem {
                     enabled: fileBrowserInstalled
                     text: (fileBrowserInstalled) ? qsTr("File Browser") : qsTr("File Browser not installed")
@@ -1177,6 +1575,19 @@ Page {
                             fillMode: Image.PreserveAspectCrop
                             source: ((random_image !== undefined) && (random_image !== "") ) ? ("image://nemoThumbnail/" + random_image) : ""
                             onSourceChanged: opacityFolderImage.start()
+
+                            Image {
+                                // the thumbnailer refuses files whose extension lies about their content, load the file itself then
+                                anchors.fill: parent
+                                visible: idCoverFolder.status === Image.Error
+                                source: (idCoverFolder.status === Image.Error) ? random_image : ""
+                                sourceSize.width: parent.width
+                                sourceSize.height: parent.height
+                                autoTransform: true
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: false
+                            }
                         }
                         Image {
                             visible: infoActivateCoverImages !== 0 && finishedLoading
@@ -1227,9 +1638,61 @@ Page {
         }
     }
 
-    Rectangle {
-        id: idFooterRow
+    // the bar sits inside its own flickable, so the timeline pull-up menu can be dragged open from the bar at any scroll position
+    SilicaFlickable {
+        id: idBottomMenuFlickable
         y: appHeight - height
+        width: page.width
+        height: Theme.itemSizeMedium
+        contentHeight: height
+        flickableDirection: Flickable.VerticalFlick
+        clip: true
+
+        PushUpMenu {
+            id: idPushUpMenu
+            visible: (currentView === "timeline")
+            enabled: (finishedLoading === true) && visible
+            quickSelect: true
+            highlightColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
+            backgroundColor: (multiSelectActive === false) ? Theme.highlightBackgroundColor : Theme.errorColor
+            // the margin is functional: the lowermost item only stays highlighted for release-to-select while the drag sits
+            // between the content end and the final position, and the margin is exactly that headroom - with 0 every full
+            // pull lands on the final position where silica drops the highlight and locks the menu open until tapped.
+            // half the default (Theme.itemSizeSmall) keeps the release zone but halves the empty space below the last item
+            bottomMargin: Theme.itemSizeSmall / 2
+
+            MenuItem {
+                text: (multiSelectActive === true) ? qsTr("Unselect") : qsTr("Selection")
+                onClicked: {
+                    if (multiSelectActive === true) {
+                        unselectAll()
+                    }
+                    else {
+                        multiSelectActive = true
+                    }
+                }
+            }
+            MenuItem {
+                text: (timelineAlbumFilter !== "") ? qsTr("Show all") : qsTr("Filter by album")
+                onClicked: {
+                    if (timelineAlbumFilter !== "") {
+                        clearTimelineAlbumFilter()
+                    }
+                    else {
+                        bannerToAlbum.notify( Theme.highlightDimmerColor, Theme.itemSizeHuge, [], "fromTimeline", "triggeredOnFirstPage", true )
+                    }
+                }
+            }
+            MenuItem {
+                text: (timelineSortDirection === "0") ? qsTr("Show oldest first") : qsTr("Show newest first")
+                onClicked: {
+                    reverseTimelineOrder()
+                }
+            }
+        }
+
+        Rectangle {
+        id: idFooterRow
         width: page.width
         height: Theme.itemSizeMedium
         color: Theme.highlightDimmerColor
@@ -1315,6 +1778,7 @@ Page {
                 }
             }
         }
+        }
     }
 
     // necessary functions
@@ -1330,27 +1794,33 @@ Page {
         idListModelImagesFolder.clear()
         idListModelSearch.clear()
         idListModelFavourites.clear()
+        idListModelTimelineFiltered.clear()
+        // idListModelDuplicates is kept: the results are not derivable from a rescan, stale rows get pruned and re-mapped afterwards
+        timelineAlbumFilter = ""
     }
 
     function countDistinctAlbums() {
         // clear listmodel and re-create it with new values
         idListModelAlbums.clear()
-        var allAlbumsArray = []
-        var prev_album_found = ""
+        // collect all albums and their files in a single pass instead of re-scanning the image model per album
+        var albumFilesMap = ({})
         for (var i = 0; i < idListModelImages.count; i++) {
-            var album_value = idListModelImages.get(i).album
-            if (album_value !== prev_album_found) {
-                allAlbumsArray.push(album_value)
-                prev_album_found = album_value
+            var imageItem = idListModelImages.get(i)
+            if (albumFilesMap[imageItem.album] === undefined) {
+                albumFilesMap[imageItem.album] = []
             }
+            albumFilesMap[imageItem.album].push( imageItem.filePath )
         }
+        distinctAlbums = Object.keys(albumFilesMap)
         if (idListModelSearch.count > 0) {
-            allAlbumsArray.push( standardSearchAlbum ) // visible when there are search results
+            distinctAlbums.push( standardSearchAlbum ) // visible when there are search results
         }
         if (idListModelFavourites.count > 0) {
-            allAlbumsArray.push( standardFavouritesAlbum ) // visible when there are favorites
+            distinctAlbums.push( standardFavouritesAlbum ) // visible when there are favorites
         }
-        distinctAlbums = (allAlbumsArray.filter(function(v,i) { return i===allAlbumsArray.lastIndexOf(v); }))
+        if (idListModelDuplicates.count > 0) {
+            distinctAlbums.push( standardDuplicatesAlbum ) // visible when duplicates were searched and found
+        }
         distinctAlbums = distinctAlbums.sort()
 
         // count items and assign a random image
@@ -1375,23 +1845,21 @@ Page {
                     randomFilePath = idListModelFavourites.get(randomIndex).filePath
                 }
             }
+            // duplicates album
+            else if (distinctAlbums[j] === standardDuplicatesAlbum) {
+                counter = idListModelDuplicates.count
+                if (counter > 0 && infoActivateCoverImages) {
+                    randomIndex = randomIntFromInterval(0, counter-1)
+                    randomFilePath = idListModelDuplicates.get(randomIndex).filePath
+                }
+            }
             // other albums
             else {
-                var tempFileArray = []
-                for (var c = 0; c < idListModelImages.count; c++) {
-                    if (idListModelImages.get(c).album === distinctAlbums[j]) {
-                        counter += 1
-                        if ((counter > 0 && infoActivateCoverImages)) {
-                            tempFileArray.push(idListModelImages.get(c).filePath)
-                        }
-                    }
-                }
+                counter = albumFilesMap[distinctAlbums[j]].length
                 if (infoActivateCoverImages) {
-                    randomIndex = randomIntFromInterval(0, tempFileArray.length-1)
-                    randomFilePath = tempFileArray[randomIndex]
-                    tempFileArray = []
+                    randomIndex = randomIntFromInterval(0, counter-1)
+                    randomFilePath = albumFilesMap[distinctAlbums[j]][randomIndex]
                 }
-
             }
 
             // now add to album listmodel
@@ -1401,46 +1869,139 @@ Page {
                                        "random_image" : randomFilePath,
                                        "previous_image" : (previousRandomImagesAlbumArray[j] !== undefined) ? previousRandomImagesAlbumArray[j] : ""
                                      })
-            tempFileArray = []
             // store that info in an array as well which we can use next time
             previousRandomImagesAlbumArray[j] = randomFilePath
         }
         //console.log(previousRandomImagesAlbumArray)
+
+        buildAlbumTree()
+    }
+
+    function toggleAlbumGroup( groupPrefix ) {
+        if (expandedAlbumPrefixes[groupPrefix] === true) {
+            delete expandedAlbumPrefixes[groupPrefix]
+        }
+        else {
+            expandedAlbumPrefixes[groupPrefix] = true
+        }
+        buildAlbumTree()
+    }
+
+    function buildAlbumTree() {
+        // coalesce the flat album list into a tree by the "Foo / Bar / Baz" naming convention:
+        // one square per first component with the aggregated count, expanding on tap into its sub-albums
+        var nodeByPrefix = ({})
+        var prefixList = []
+        for (var i = 0; i < idListModelAlbums.count; i++) {
+            var fullName = idListModelAlbums.get(i).album_name
+            var isSpecialAlbum = (fullName === standardAlbum || fullName === standardSearchAlbum || fullName === standardFavouritesAlbum || fullName === standardDuplicatesAlbum)
+            var nameParts = isSpecialAlbum ? [fullName] : fullName.split(" / ")
+            var prefix = ""
+            for (var p = 0; p < nameParts.length; p++) {
+                var parentPrefix = prefix
+                prefix = (p === 0) ? nameParts[p] : prefix + " / " + nameParts[p]
+                if (nodeByPrefix[prefix] === undefined) {
+                    nodeByPrefix[prefix] = { "displayName" : (isSpecialAlbum ? nameParts[p].substring(1) : nameParts[p]), "parentPrefix" : parentPrefix, "depth" : p,
+                                             "count" : 0, "image" : "", "ownCount" : 0, "ownImage" : "", "previousImage" : "", "isAlbum" : false, "hasChildren" : false }
+                    prefixList.push(prefix)
+                }
+                nodeByPrefix[prefix].count += idListModelAlbums.get(i).album_count
+                if (nodeByPrefix[prefix].image === "") { nodeByPrefix[prefix].image = idListModelAlbums.get(i).random_image }
+                if (p === nameParts.length - 1) {
+                    nodeByPrefix[prefix].isAlbum = true
+                    nodeByPrefix[prefix].ownCount = idListModelAlbums.get(i).album_count
+                    nodeByPrefix[prefix].ownImage = idListModelAlbums.get(i).random_image
+                    nodeByPrefix[prefix].previousImage = idListModelAlbums.get(i).previous_image
+                }
+                else {
+                    nodeByPrefix[prefix].hasChildren = true
+                }
+            }
+        }
+
+        prefixList.sort() // keeps children right after their group since " " sorts before any letter
+        idListModelAlbumTree.clear()
+        var columnsPerRow = Math.max(1, Math.floor(idGridViewAlbums.width / idGridViewAlbums.cellWidth))
+        var lastEmittedDepth = -1
+        for (i = 0; i < prefixList.length; i++) {
+            var node = nodeByPrefix[prefixList[i]]
+
+            // a row is visible only while every ancestor group is expanded
+            var visibleRow = true
+            var ancestorPrefix = node.parentPrefix
+            while (ancestorPrefix !== "") {
+                if (expandedAlbumPrefixes[ancestorPrefix] !== true) { visibleRow = false }
+                ancestorPrefix = nodeByPrefix[ancestorPrefix].parentPrefix
+            }
+
+            if (visibleRow === true) {
+                // every change of tree depth starts a fresh grid row, sub-albums always sit on their own rows
+                if (lastEmittedDepth !== -1 && node.depth !== lastEmittedDepth) {
+                    padAlbumTreeRow(columnsPerRow)
+                }
+                var expandMarker = (node.hasChildren === true) ? ((expandedAlbumPrefixes[prefixList[i]] === true) ? "▼ " : "▶ ") : ""
+                idListModelAlbumTree.append({ "album_name" : prefixList[i],
+                                              "display_name" : expandMarker + ((node.depth === 0) ? node.displayName : prefixList[i]),
+                                              "album_count" : node.count,
+                                              "random_image" : node.image,
+                                              "previous_image" : (node.hasChildren === true) ? "" : node.previousImage,
+                                              "is_group" : node.hasChildren,
+                                              "depth" : node.depth,
+                                              "is_filler" : false
+                                            })
+                lastEmittedDepth = node.depth
+                // an album that also has sub-albums gets an own leaf row when expanded, holding just its own images
+                if (node.hasChildren === true && node.isAlbum === true && expandedAlbumPrefixes[prefixList[i]] === true) {
+                    padAlbumTreeRow(columnsPerRow)
+                    idListModelAlbumTree.append({ "album_name" : prefixList[i],
+                                                  "display_name" : prefixList[i],
+                                                  "album_count" : node.ownCount,
+                                                  "random_image" : node.ownImage,
+                                                  "previous_image" : node.previousImage,
+                                                  "is_group" : false,
+                                                  "depth" : node.depth + 1,
+                                                  "is_filler" : false
+                                                })
+                    lastEmittedDepth = node.depth + 1
+                }
+            }
+        }
+    }
+
+    function padAlbumTreeRow( columnsPerRow ) {
+        // textless disabled squares filling the rest of a grid row
+        while (idListModelAlbumTree.count % columnsPerRow !== 0) {
+            idListModelAlbumTree.append({ "album_name" : "", "display_name" : "", "album_count" : 0,
+                                          "random_image" : "", "previous_image" : "", "is_group" : false,
+                                          "depth" : 0, "is_filler" : true })
+        }
     }
 
     function countDistinctFolders() {
-        var uniqueFoldersArray = []
-        var uniqueFoldersCounterArray = []
         idListModelFolders.clear() // creates trouble, sometimes scrolls list back up to zero on randomizing ... how to avoid that???
 
+        // collect all folders and their files in a single pass, growing the listmodel strings per image is far too slow
+        var uniqueFoldersArray = []
+        var folderFilesMap = ({})
         for (var i = 0; i < idListModelImages.count; i++) {
-            var tempFolderPath = idListModelImages.get(i).folderPath
-            var tempFilePath = idListModelImages.get(i).filePath
-            var tempUniqueFolderArrayIndex = uniqueFoldersArray.indexOf( tempFolderPath )
-
-            if (tempUniqueFolderArrayIndex > -1) { // already in listmodel
-                // raise the file counter +1
-                uniqueFoldersCounterArray[tempUniqueFolderArrayIndex] = uniqueFoldersCounterArray[tempUniqueFolderArrayIndex] + 1
-                idListModelFolders.setProperty( tempUniqueFolderArrayIndex, "folder_count", uniqueFoldersCounterArray[tempUniqueFolderArrayIndex])
-                // update the list of available file paths
-                var prevListFilesInFolder = idListModelFolders.get(tempUniqueFolderArrayIndex).folder_files_all
-                idListModelFolders.setProperty( tempUniqueFolderArrayIndex, "folder_files_all", prevListFilesInFolder + "|||" + tempFilePath)
-                prevListFilesInFolder = ""
+            var imageItem = idListModelImages.get(i)
+            if (folderFilesMap[imageItem.folderPath] === undefined) {
+                uniqueFoldersArray.push( imageItem.folderPath )
+                folderFilesMap[imageItem.folderPath] = []
             }
-            else { // not yet in listmodel
-                uniqueFoldersArray.push( tempFolderPath )
-                uniqueFoldersCounterArray.push( 1 )
-                idListModelFolders.append({ "folder_name" : tempFolderPath,
-                                            "folder_count" : 1,
-                                            "folder_files_all" : tempFilePath,
-                                            "random_image" : "",
-                                          })
-            }
+            folderFilesMap[imageItem.folderPath].push( imageItem.filePath )
+        }
+        for (var j = 0; j < uniqueFoldersArray.length; j++) {
+            idListModelFolders.append({ "folder_name" : uniqueFoldersArray[j],
+                                        "folder_count" : folderFilesMap[uniqueFoldersArray[j]].length,
+                                        "folder_files_all" : (folderFilesMap[uniqueFoldersArray[j]]).join("|||"),
+                                        "random_image" : "",
+                                      })
         }
         // now sort listmodel alphabetically and cleanup
         idListModelFolders.quick_sort()
         uniqueFoldersArray = []
-        uniqueFoldersCounterArray = []
+        folderFilesMap = ({})
     }
 
     function randomizeDistinctFoldersArray() {
@@ -1459,7 +2020,7 @@ Page {
         currentAlbum = albumName
         idListModelImagesAlbum.clear()
 
-        if (albumName !== standardSearchAlbum && albumName !== standardFavouritesAlbum) {
+        if (albumName !== standardSearchAlbum && albumName !== standardFavouritesAlbum && albumName !== standardDuplicatesAlbum) {
             for (var i = 0; i < idListModelImages.count; i++) {
                 if ( (idListModelImages.get(i).album) === albumName ) {
                     idListModelImagesAlbum.append({
@@ -1476,9 +2037,34 @@ Page {
                         "isSearchResult" : false,
                         "timestampSource" : idListModelImages.get(i).timestampSource,
                         "isFavourite" : idListModelImages.get(i).isFavourite,
-                        "listModelImages_baseIndex" : i
+                        "listModelImages_baseIndex" : i,
+                        "duplicateGroup" : -1,
+                        "duplicateDistance" : -1
                     })
                 }
+            }
+        }
+
+        else if (albumName === standardDuplicatesAlbum) {
+            for (i = 0; i < idListModelDuplicates.count; i++) {
+                idListModelImagesAlbum.append({
+                    "creationDateMS" : idListModelDuplicates.get(i).creationDateMS,
+                    "filePath" : idListModelDuplicates.get(i).filePath,
+                    "monthYear" : idListModelDuplicates.get(i).monthYear,
+                    "day" : idListModelDuplicates.get(i).day,
+                    "folderPath" : idListModelDuplicates.get(i).folderPath,
+                    "fileName" : idListModelDuplicates.get(i).fileName,
+                    "estimatedSize" : idListModelDuplicates.get(i).estimatedSize,
+                    "album" : idListModelDuplicates.get(i).album,
+                    "selected" : false,
+                    "exifInfo" :  idListModelDuplicates.get(i).album,
+                    "isSearchResult" : false,
+                    "timestampSource" : idListModelDuplicates.get(i).timestampSource,
+                    "isFavourite" : idListModelDuplicates.get(i).isFavourite,
+                    "listModelImages_baseIndex" : idListModelDuplicates.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : idListModelDuplicates.get(i).duplicateGroup,
+                    "duplicateDistance" : idListModelDuplicates.get(i).duplicateDistance
+                })
             }
         }
 
@@ -1499,7 +2085,9 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelFavourites.get(i).timestampSource,
                     "isFavourite" : idListModelFavourites.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelFavourites.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelFavourites.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -1521,7 +2109,9 @@ Page {
                     "isSearchResult" : idListModelSearch.get(i).isSearchResult,
                     "timestampSource" : idListModelSearch.get(i).timestampSource,
                     "isFavourite" : idListModelSearch.get(i).isFavourite,
-                    "listModelImages_baseIndex" : idListModelSearch.get(i).listModelImages_baseIndex
+                    "listModelImages_baseIndex" : idListModelSearch.get(i).listModelImages_baseIndex,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
@@ -1532,6 +2122,11 @@ Page {
         // search album
         if (albumName === standardSearchAlbum) {
             idListModelSearch.clear()
+        }
+
+        // duplicates album
+        else if (albumName === standardDuplicatesAlbum) {
+            idListModelDuplicates.clear()
         }
 
         // favourites album
@@ -1620,6 +2215,7 @@ Page {
 
     function getImagesInFolder( folderName ) {
         currentFolder = folderName
+        currentFolderAlbumFilter = "" // opening a folder always starts unfiltered
         idListModelImagesFolder.clear()
 
         for (var i = 0; i < idListModelImages.count; i++) {
@@ -1638,99 +2234,630 @@ Page {
                     "isSearchResult" : false,
                     "timestampSource" : idListModelImages.get(i).timestampSource,
                     "isFavourite" : idListModelImages.get(i).isFavourite,
-                    "listModelImages_baseIndex" : i
+                    "listModelImages_baseIndex" : i,
+                    "duplicateGroup" : -1,
+                    "duplicateDistance" : -1
                 })
             }
         }
     }
 
-    function deleteThisImage ( filePathArray, fromPage ) {
-
-        // buxfix: if there are too many files the UI gets blocked by the below, so use only if there are few imges to delete at once
-        if (filePathArray.length < imagesWorkload2Rescan) {
-
-            // cycle through all files individually
-            for (var j = 0; j < filePathArray.length; j++) {
-                var filePath = filePathArray[j]
-
-                // remove from DB, checks automatically if available or not
-                storageItem.removeAlbum(filePath)
-
-                // remove from main image list
-                for (var i = idListModelImages.count -1; i >= 0; --i) {
-                    if (idListModelImages.get(i).filePath === filePath) {
-                        idListModelImages.remove(i)
-                    }
-                }
-
-                // remove from current album list
-                for (var k = idListModelImagesAlbum.count -1; k >= 0; --k) {
-                    if (idListModelImagesAlbum.get(k).filePath === filePath) {
-                        idListModelImagesAlbum.remove(k)
-                    }
-                }
-
-                // remove from current folder list
-                for ( var o = idListModelImagesFolder.count -1; o >= 0; --o) {
-                    if (idListModelImagesFolder.get(o).filePath === filePath) {
-                        idListModelImagesFolder.remove(o)
-                    }
-                }
-
-                // possibly remove from search results list as well
-                for ( var l = idListModelSearch.count -1; l >= 0; --l) {
-                    if (idListModelSearch.get(l).filePath === filePath) {
-                        idListModelSearch.remove(l)
-                    }
-                }
-
-                // possibly remove from favourites list as well and from its DB entry
-                for ( l = idListModelFavourites.count -1; l >= 0; --l) {
-                    if (idListModelFavourites.get(l).filePath === filePath) {
-                        idListModelFavourites.remove(l)
-                        storageItem.removeKeywords(filePath)
-                    }
-                }
-            }
-            // then remove physical file
-            py.deleteFilesFunction( filePathArray, imagesWorkload2Rescan)
-
-            // re-count items still left, search results should be kept
-            countDistinctAlbums()
-
-            // remove album and close album-page, if it was last image available
-            if (idListModelImagesAlbum.count < 1) {
-                for ( var m = idListModelAlbums.count -1; m >= 0; --m) {
-                    if ((idListModelAlbums.get(m).album_name === currentAlbum) && (currentAlbum !== standardFavouritesAlbum) && (currentAlbum !== standardAlbum)) {
-                        idListModelAlbums.remove(m)
-                    }
-                }
-                if (fromPage === "albumPage") { pageStack.pop() }
-            }
-
-            // re-count items still left in folders
-            countDistinctFolders()
-            randomizeDistinctFoldersArray()
-
-            // remove folder from list, if it was last image available
-            if (idListModelImagesFolder.count < 1) {
-                for ( var n = idListModelFolders.count -1; n >= 0; --n) {
-                    if (idListModelFolders.get(n).folder_name === currentFolder) {
-                        idListModelFolders.remove(n)
-                    }
-                }
-                if (fromPage === "folderPage") { pageStack.pop() }
+    function dropLonelyDuplicateGroups() {
+        // a group whose partners got deleted, renamed away or dropped out of the scan must not
+        // linger as a single image - being alone in DUPLICATES means nothing was duplicated
+        var membersPerGroup = ({})
+        for (var i = 0; i < idListModelDuplicates.count; i++) {
+            var groupNumber = idListModelDuplicates.get(i).duplicateGroup
+            membersPerGroup[groupNumber] = (membersPerGroup[groupNumber] === undefined) ? 1 : membersPerGroup[groupNumber] + 1
+        }
+        var droppedAny = false
+        for (i = idListModelDuplicates.count -1; i >= 0; --i) {
+            if (membersPerGroup[idListModelDuplicates.get(i).duplicateGroup] < 2) {
+                idListModelDuplicates.remove(i)
+                droppedAny = true
             }
         }
-        // bugfix: if there are too many images 2 delete, the list counting takes too long and blocks UI, we therefore just call a complete rescan from Python side to fill up lists
+        // renumber what is left, a gap in the group numbers would only make the user wonder
+        var newNumberForGroup = ({})
+        var nextGroupNumber = 0
+        for (i = 0; i < idListModelDuplicates.count; i++) {
+            var oldNumber = idListModelDuplicates.get(i).duplicateGroup
+            if (newNumberForGroup[oldNumber] === undefined) {
+                newNumberForGroup[oldNumber] = nextGroupNumber
+                nextGroupNumber = nextGroupNumber + 1
+            }
+            if (newNumberForGroup[oldNumber] !== oldNumber) {
+                idListModelDuplicates.setProperty(i, "duplicateGroup", newNumberForGroup[oldNumber])
+            }
+        }
+        // the survivor was not deleted, so nothing else would take its copy out of an open duplicates page
+        if (droppedAny === true && currentAlbum === standardDuplicatesAlbum) {
+            getImagesInAlbum( standardDuplicatesAlbum )
+        }
+    }
+
+    function remapBaseIndexes() {
+        // re-map the stored positions into idListModelImages after its rows shifted
+        var pathIndexMap = ({})
+        for (var i = 0; i < idListModelImages.count; i++) {
+            pathIndexMap[idListModelImages.get(i).filePath] = i
+        }
+        for (var l = 0; l < idListModelFavourites.count; l++) {
+            idListModelFavourites.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelFavourites.get(l).filePath])
+        }
+        for (l = 0; l < idListModelTimelineFiltered.count; l++) {
+            if (pathIndexMap[idListModelTimelineFiltered.get(l).filePath] !== undefined) {
+                idListModelTimelineFiltered.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelTimelineFiltered.get(l).filePath])
+            }
+        }
+        // the duplicates results outlive rescans, rows of vanished files get dropped here
+        for (l = idListModelDuplicates.count -1; l >= 0; --l) {
+            if (pathIndexMap[idListModelDuplicates.get(l).filePath] === undefined) {
+                idListModelDuplicates.remove(l)
+            }
+            else {
+                idListModelDuplicates.setProperty(l, "listModelImages_baseIndex", pathIndexMap[idListModelDuplicates.get(l).filePath])
+            }
+        }
+        for (var k = 0; k < idListModelImagesAlbum.count; k++) {
+            if (pathIndexMap[idListModelImagesAlbum.get(k).filePath] !== undefined) {
+                idListModelImagesAlbum.setProperty(k, "listModelImages_baseIndex", pathIndexMap[idListModelImagesAlbum.get(k).filePath])
+            }
+        }
+        for (var o = 0; o < idListModelImagesFolder.count; o++) {
+            if (pathIndexMap[idListModelImagesFolder.get(o).filePath] !== undefined) {
+                idListModelImagesFolder.setProperty(o, "listModelImages_baseIndex", pathIndexMap[idListModelImagesFolder.get(o).filePath])
+            }
+        }
+
+        dropLonelyDuplicateGroups() // pruning above may have left a group with a single member
+    }
+
+    function runDuplicateSearch() {
+        // hashing every image takes a while on the first run, later runs reuse the cached hashes
+        var allPathsArray = []
+        for (var i = 0; i < idListModelImages.count; i++) {
+            allPathsArray.push(idListModelImages.get(i).filePath)
+        }
+        finishedLoading = false
+        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : infoDuplicateDistance )
+    }
+
+    function toggleDuplicateTolerance() {
+        // only the setting is touched, the watchdog underneath re-groups the images - the hashes
+        // come from the cache, so switching modes costs no rehashing
+        var newTolerance = (infoDuplicateTolerance === 0) ? 1 : 0
+        var haveResultsToRebuild = (idListModelDuplicates.count > 0) // that is all the watchdog reacts to
+        storageItem.setSetting("infoDuplicateTolerance", newTolerance)
+        infoDuplicateTolerance = newTolerance
+        if (haveResultsToRebuild === false) {
+            // exact matching may have found nothing at all, switching to near must still search
+            runDuplicateSearch()
+        }
+    }
+
+    property var trackedDuplicateTolerance : infoDuplicateTolerance // watchdog pattern: a changed matching setting rebuilds existing results
+    onTrackedDuplicateToleranceChanged: {
+        if (idListModelDuplicates.count > 0) {
+            runDuplicateSearch()
+        }
+    }
+
+    function setDuplicateDistance( newDistance ) {
+        // the tolerance slider in DUPLICATES, same deal as the mode toggle above
+        var haveResultsToRebuild = (idListModelDuplicates.count > 0)
+        storageItem.setSetting("infoDuplicateDistance", newDistance)
+        infoDuplicateDistance = newDistance
+        if (haveResultsToRebuild === false) {
+            runDuplicateSearch()
+        }
+    }
+
+    property var trackedDuplicateDistance : infoDuplicateDistance // watchdog pattern again, a wider or tighter tolerance regroups
+    onTrackedDuplicateDistanceChanged: {
+        if (infoDuplicateTolerance !== 0 && idListModelDuplicates.count > 0) {
+            runDuplicateSearch()
+        }
+    }
+
+    function decideGifAlbum( albumsArray ) {
+        // all frames in one album -> the gif joins it, UNSORTED entries do not break the deal
+        var targetAlbum = ""
+        for (var i = 0; i < albumsArray.length; i++) {
+            if (albumsArray[i] !== standardAlbum) {
+                if (targetAlbum === "") {
+                    targetAlbum = albumsArray[i]
+                }
+                else if (targetAlbum !== albumsArray[i]) {
+                    return ""
+                }
+            }
+        }
+        return targetAlbum
+    }
+
+    function showImageInTimeline( targetPath ) {
+        // jump to the full timeline and center the image, eg. after tapping the gif-created notification.
+        // the timeline lives on this page - a pushed album/folder/viewer page would hide the jump completely
+        var popGuard = 0
+        while (pageStack.depth > 1 && popGuard < 10) {
+            pageStack.pop(undefined, PageStackAction.Immediate)
+            popGuard += 1
+        }
+        currentView = "timeline"
+        storageItem.setSetting("infoCurrentView", "timeline")
+        timelineAlbumFilter = ""
+        idListModelTimelineFiltered.clear()
+        var foundIndex = -1
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === targetPath) {
+                foundIndex = i
+            }
+        }
+        if (foundIndex >= 0) {
+            pendingTimelineJumpPath = ""
+            idListViewTimeline.positionViewAtIndex( foundIndex, ListView.Center ) // the viewer pops back onto the right spot
+            // and open the image itself, exactly like tapping it in the timeline
+            var allCurrentModelImagePathsArray = []
+            for (i = 0; i < idListModelImages.count; i++) {
+                allCurrentModelImagePathsArray.push(idListModelImages.get(i).filePath)
+            }
+            pageStack.animatorPush(viewPage, {
+                                       upperFreeHeight : upperFreeHeight,
+                                       allCurrentModelImagePathsArray : allCurrentModelImagePathsArray,
+                                       currentImageIndex : foundIndex,
+                                   })
+        }
         else {
-            // remove images from DB
-            for (j = 0; j < filePathArray.length; j++) {
-                storageItem.removeAlbum(filePathArray[j])
-            }
-            // batch delete images in Py
-            py.deleteFilesFunction( filePathArray, imagesWorkload2Rescan)
+            pendingTimelineJumpPath = targetPath // probably still being scanned in, retried when the scan lands
         }
+    }
+
+    function switchViewBySwipe( direction ) {
+        if (finishedLoading === false) { return }
+        var viewOrder = ["timeline", "album", "folder"]
+        var viewIndex = viewOrder.indexOf(currentView) + direction
+        if (viewIndex < 0 || viewIndex >= viewOrder.length) { return } // no wrap around, settings only opens by tapping its button
+        currentView = viewOrder[viewIndex]
+        storageItem.setSetting("infoCurrentView", currentView)
+    }
+
+    function jumpToDate( targetDate ) {
+        // whatever the timeline is showing is what gets searched, filtered or not - asking python for
+        // an index into the full list and then using it on a filtered view landed anywhere at all.
+        // creationDateMS holds seconds despite its name, the whole app treats it that way
+        var visibleModel = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered : idListModelImages
+        if (visibleModel.count < 1) { return }
+        var dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime() / 1000
+        var dayEnd = dayStart + 24*60*60
+        var bestIndex = -1
+        var bestDistance = -1
+        for (var i = 0; i < visibleModel.count; i++) {
+            var imageSeconds = visibleModel.get(i).creationDateMS
+            if (imageSeconds >= dayStart && imageSeconds < dayEnd) {
+                bestIndex = i // a picture from that very day, nothing beats it
+                break
+            }
+            // nothing from that day so far, so remember the picture closest to it in either direction
+            var distance = (imageSeconds < dayStart) ? (dayStart - imageSeconds) : (imageSeconds - dayEnd)
+            if (bestDistance < 0 || distance < bestDistance) {
+                bestDistance = distance
+                bestIndex = i
+            }
+        }
+        if (bestIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( bestIndex, ListView.Center )
+        }
+    }
+
+    function centeredTimelineIndex() {
+        // index of the image currently centered on screen, the center may hit a section header or the row spacing so probe around it
+        var centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 )
+        if (centeredIndex < 0) {
+            centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 + minimumTimelineListItemHeight / 2 )
+        }
+        if (centeredIndex < 0) {
+            centeredIndex = idListViewTimeline.indexAt( idListViewTimeline.width / 2, idListViewTimeline.contentY + idListViewTimeline.height / 2 - minimumTimelineListItemHeight / 2 )
+        }
+        return centeredIndex
+    }
+
+    function clearTimelineAlbumFilter() {
+        if (multiSelectActive === true) { unselectAll() } // the selection flags of the rebuilt rows would go stale
+        // keep the centered image centered when going back to the full list, its position there is the stored base index
+        var centeredIndex = centeredTimelineIndex()
+        var mainListIndex = (centeredIndex >= 0) ? idListModelTimelineFiltered.get(centeredIndex).listModelImages_baseIndex : -1
+        timelineAlbumFilter = ""
+        idListModelTimelineFiltered.clear()
+        if (mainListIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( mainListIndex, ListView.Center )
+        }
+    }
+
+    function reverseTimelineOrder() {
+        // remember what is centered on screen right now, the reversal must keep it there
+        var visibleModelCount = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered.count : idListModelImages.count
+        var centeredIndex = centeredTimelineIndex()
+
+        // flip the stored direction so the next scan sorts the same way
+        timelineSortDirection = (timelineSortDirection === "0") ? "1" : "0"
+        storageItem.setSetting( "infoTimeLineDirectionIndex", timelineSortDirection )
+
+        // rebuild the lists in reverse, much faster than a full rescan
+        var reversedRowsArray = []
+        for (var i = idListModelImages.count -1; i >= 0; --i) {
+            var imageItem = idListModelImages.get(i)
+            reversedRowsArray.push({
+                "creationDateMS" : imageItem.creationDateMS,
+                "filePath" : imageItem.filePath,
+                "monthYear" : imageItem.monthYear,
+                "day" : imageItem.day,
+                "folderPath" : imageItem.folderPath,
+                "fileName" : imageItem.fileName,
+                "estimatedSize" : imageItem.estimatedSize,
+                "album" : imageItem.album,
+                "selected" : false,
+                "exifInfo" : imageItem.exifInfo,
+                "isSearchResult" : imageItem.isSearchResult,
+                "timestampSource" : imageItem.timestampSource,
+                "isFavourite" : imageItem.isFavourite
+            })
+        }
+        idListModelImages.clear()
+        idListModelImages.append(reversedRowsArray)
+
+        var reversedFavouritesArray = []
+        for (i = idListModelFavourites.count -1; i >= 0; --i) {
+            var favouriteItem = idListModelFavourites.get(i)
+            reversedFavouritesArray.push({
+                "creationDateMS" : favouriteItem.creationDateMS,
+                "filePath" : favouriteItem.filePath,
+                "monthYear" : favouriteItem.monthYear,
+                "day" : favouriteItem.day,
+                "folderPath" : favouriteItem.folderPath,
+                "fileName" : favouriteItem.fileName,
+                "estimatedSize" : favouriteItem.estimatedSize,
+                "album" : favouriteItem.album,
+                "selected" : false,
+                "exifInfo" : favouriteItem.exifInfo,
+                "isSearchResult" : favouriteItem.isSearchResult,
+                "timestampSource" : favouriteItem.timestampSource,
+                "isFavourite" : favouriteItem.isFavourite,
+                "listModelImages_baseIndex" : favouriteItem.listModelImages_baseIndex
+            })
+        }
+        idListModelFavourites.clear()
+        idListModelFavourites.append(reversedFavouritesArray)
+
+        remapBaseIndexes()
+
+        // rebuild an active filter in the new order
+        if (timelineAlbumFilter !== "") {
+            setTimelineAlbumFilter( timelineAlbumFilter )
+        }
+
+        // scroll back so the previously centered image stays centered, its position mirrors in a reversed list
+        if (centeredIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( visibleModelCount - 1 - centeredIndex, ListView.Center )
+        }
+    }
+
+    function addTimelineRowToFavourites( sourceModel, rowIndex, updateType ) {
+        // append to the favourites model unless already there, removal happens in updateAllLists_isFavourite
+        if (updateType !== "addFavourite") { return }
+        for (var k = 0; k < idListModelFavourites.count; k++) {
+            if (idListModelFavourites.get(k).filePath === sourceModel.get(rowIndex).filePath) { return }
+        }
+        idListModelFavourites.append({
+                             "creationDateMS" : sourceModel.get(rowIndex).creationDateMS,
+                             "filePath" : sourceModel.get(rowIndex).filePath,
+                             "monthYear" : sourceModel.get(rowIndex).monthYear,
+                             "day" : sourceModel.get(rowIndex).day,
+                             "folderPath" : sourceModel.get(rowIndex).folderPath,
+                             "fileName" : sourceModel.get(rowIndex).fileName,
+                             "estimatedSize" : sourceModel.get(rowIndex).estimatedSize,
+                             "album" : sourceModel.get(rowIndex).album,
+                             "selected" : false,
+                             "exifInfo" :  sourceModel.get(rowIndex).album,
+                             "isSearchResult" : false,
+                             "timestampSource" : sourceModel.get(rowIndex).timestampSource,
+                             "isFavourite" : "true",
+                             "listModelImages_baseIndex" : (timelineAlbumFilter !== "") ? sourceModel.get(rowIndex).listModelImages_baseIndex : rowIndex
+                         })
+    }
+
+    function setTimelineAlbumFilter( albumName ) {
+        if (multiSelectActive === true) { unselectAll() } // the selection flags of the rebuilt rows would go stale
+        // resolve the centered image to its position in the main list, the filter should land on the closest date instead of the top
+        var centeredIndex = centeredTimelineIndex()
+        var centeredBaseIndex = -1
+        if (centeredIndex >= 0) {
+            centeredBaseIndex = (timelineAlbumFilter !== "") ? idListModelTimelineFiltered.get(centeredIndex).listModelImages_baseIndex : centeredIndex
+        }
+        var centeredDateMS = (centeredBaseIndex >= 0) ? idListModelImages.get(centeredBaseIndex).creationDateMS : 0
+        var nearestFilteredIndex = -1
+        var passedCenter = false
+
+        timelineAlbumFilter = albumName
+        idListModelTimelineFiltered.clear()
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).album === albumName) {
+                // the lists share their chronological order, so the nearest list position is also the nearest date
+                if (centeredBaseIndex >= 0 && passedCenter === false) {
+                    if (i <= centeredBaseIndex) {
+                        nearestFilteredIndex = idListModelTimelineFiltered.count
+                    }
+                    else {
+                        passedCenter = true
+                        if (nearestFilteredIndex < 0 || Math.abs(idListModelImages.get(i).creationDateMS - centeredDateMS) < Math.abs(idListModelTimelineFiltered.get(nearestFilteredIndex).creationDateMS - centeredDateMS)) {
+                            nearestFilteredIndex = idListModelTimelineFiltered.count
+                        }
+                    }
+                }
+                idListModelTimelineFiltered.append({
+                    "creationDateMS" : idListModelImages.get(i).creationDateMS,
+                    "filePath" : idListModelImages.get(i).filePath,
+                    "monthYear" : idListModelImages.get(i).monthYear,
+                    "day" : idListModelImages.get(i).day,
+                    "folderPath" : idListModelImages.get(i).folderPath,
+                    "fileName" : idListModelImages.get(i).fileName,
+                    "estimatedSize" : idListModelImages.get(i).estimatedSize,
+                    "album" : idListModelImages.get(i).album,
+                    "selected" : false,
+                    "exifInfo" :  idListModelImages.get(i).album,
+                    "isSearchResult" : false,
+                    "timestampSource" : idListModelImages.get(i).timestampSource,
+                    "isFavourite" : idListModelImages.get(i).isFavourite,
+                    "listModelImages_baseIndex" : i
+                })
+            }
+        }
+
+        // scroll to the filtered image closest to the previously centered date, reverseTimelineOrder repositions again afterwards when it is the caller
+        if (nearestFilteredIndex >= 0) {
+            idListViewTimeline.positionViewAtIndex( nearestFilteredIndex, ListView.Center )
+        }
+    }
+
+    function applyTimelineAlbumFilter() {
+        // drop images whose album no longer matches the active filter, checked against the main list which holds the fresh album values
+        if (timelineAlbumFilter === "") { return }
+        for (var i = idListModelTimelineFiltered.count -1; i >= 0; --i) {
+            if (idListModelImages.get(idListModelTimelineFiltered.get(i).listModelImages_baseIndex).album !== timelineAlbumFilter) {
+                idListModelTimelineFiltered.remove(i)
+            }
+        }
+    }
+
+    function setFolderAlbumFilter( albumName ) {
+        // re-fill the folder list first, an earlier filter may have hidden images of the newly chosen album
+        getImagesInFolder( currentFolder )
+        currentFolderAlbumFilter = albumName
+        applyFolderAlbumFilter()
+    }
+
+    function renameFileInAllLists( oldPath, newPath ) {
+        if (oldPath === newPath) { return }
+        var newFileName = newPath.substring(newPath.lastIndexOf("/") + 1)
+        var newFolderPath = newPath.substring(0, newPath.lastIndexOf("/") + 1)
+
+        // both DB tables are keyed by the path, move the rows over or the image loses its album and its star
+        var storedAlbum = storageItem.getAlbum(oldPath, "")
+        storageItem.removeAlbum(oldPath)
+        if (storedAlbum !== "") {
+            storageItem.addAlbum(newPath, storedAlbum)
+        }
+        var storedKeyword = storageItem.getKeywords(oldPath, "")
+        storageItem.removeKeywords(oldPath)
+        if (storedKeyword !== "") {
+            storageItem.addKeywords(newPath, storedKeyword)
+        }
+
+        // every model carrying image roles
+        var pathCarryingModels = [ idListModelImages, idListModelImagesAlbum, idListModelImagesFolder, idListModelSearch,
+                                   idListModelFavourites, idListModelTimelineFiltered, idListModelDuplicates ]
+        for (var m = 0; m < pathCarryingModels.length; m++) {
+            for (var i = 0; i < pathCarryingModels[m].count; i++) {
+                if (pathCarryingModels[m].get(i).filePath === oldPath) {
+                    pathCarryingModels[m].setProperty(i, "filePath", newPath)
+                    pathCarryingModels[m].setProperty(i, "fileName", newFileName)
+                    pathCarryingModels[m].setProperty(i, "folderPath", newFolderPath)
+                }
+            }
+        }
+
+        // moving the file to another folder takes it out of the folder view being browsed
+        if ((currentFolder !== "") && (newFolderPath !== currentFolder)) {
+            for (i = idListModelImagesFolder.count -1; i >= 0; --i) {
+                if (idListModelImagesFolder.get(i).filePath === newPath) {
+                    idListModelImagesFolder.remove(i)
+                }
+            }
+        }
+
+        // global image references, the slideshow path is sometimes stored in url form
+        if (coverImagePath === oldPath) { coverImagePath = newPath }
+        if (lastEditedImagePath === oldPath) { lastEditedImagePath = newPath }
+        if (lastNotifiedImagePath === oldPath) { lastNotifiedImagePath = newPath }
+        if (currentSlideshowImagePath === oldPath) { currentSlideshowImagePath = newPath }
+        else if (currentSlideshowImagePath === "file://" + oldPath) { currentSlideshowImagePath = "file://" + newPath }
+        for (i = 0; i < previousRandomImagesAlbumArray.length; i++) {
+            if (previousRandomImagesAlbumArray[i] === oldPath) {
+                previousRandomImagesAlbumArray[i] = newPath
+            }
+        }
+
+        // album and folder covers are path-derived, and a move changes the folder counts
+        countDistinctAlbums()
+        countDistinctFolders()
+        randomizeDistinctFoldersArray()
+
+        // an open viewer follows the file under its new name
+        lastRenamedOldPath = oldPath
+        lastRenamedNewPath = newPath
+        fileRenameCounter = fileRenameCounter + 1
+    }
+
+    function setAlbumInAllModels( targetPath, targetAlbumName ) {
+        // used when the album is set from the viewer, which can be reached from any of the lists
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).filePath === targetPath) {
+                idListModelImages.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelFavourites.count; i++) {
+            if (idListModelFavourites.get(i).filePath === targetPath) {
+                idListModelFavourites.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelSearch.count; i++) {
+            if (idListModelSearch.get(i).filePath === targetPath) {
+                idListModelSearch.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelImagesFolder.count; i++) {
+            if (idListModelImagesFolder.get(i).filePath === targetPath) {
+                idListModelImagesFolder.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelDuplicates.count; i++) {
+            if (idListModelDuplicates.get(i).filePath === targetPath) {
+                idListModelDuplicates.setProperty(i, "album", targetAlbumName)
+            }
+        }
+        for (i = 0; i < idListModelTimelineFiltered.count; i++) {
+            if (idListModelTimelineFiltered.get(i).filePath === targetPath) {
+                idListModelTimelineFiltered.setProperty(i, "album", targetAlbumName)
+            }
+        }
+
+        // an open album page holds one album only, the image leaves it when it moved elsewhere
+        var removedFromOpenAlbum = false
+        for (i = idListModelImagesAlbum.count -1; i >= 0; --i) {
+            if (idListModelImagesAlbum.get(i).filePath === targetPath) {
+                idListModelImagesAlbum.setProperty(i, "album", targetAlbumName)
+                if ((currentAlbum !== standardFavouritesAlbum) && (currentAlbum !== standardSearchAlbum) && (currentAlbum !== standardDuplicatesAlbum) && (targetAlbumName !== currentAlbum)) {
+                    idListModelImagesAlbum.remove(i)
+                    removedFromOpenAlbum = true
+                }
+            }
+        }
+
+        // a filtered timeline or folder view may not match the new album any more
+        applyTimelineAlbumFilter()
+        applyFolderAlbumFilter()
+
+        // an open viewer refreshes its info overlay, and closes when the image just left what is being browsed
+        albumAssignmentLeftTheView = ((timelineAlbumFilter !== "" && targetAlbumName !== timelineAlbumFilter)
+                                      || (currentFolderAlbumFilter !== "" && targetAlbumName !== currentFolderAlbumFilter)
+                                      || removedFromOpenAlbum)
+        albumAssignmentCounter = albumAssignmentCounter + 1
+    }
+
+    function applyFolderAlbumFilter() {
+        if (currentFolderAlbumFilter === "") { return }
+        for (var i = idListModelImagesFolder.count -1; i >= 0; --i) {
+            if (idListModelImagesFolder.get(i).album !== currentFolderAlbumFilter) {
+                idListModelImagesFolder.remove(i)
+            }
+        }
+    }
+
+    function deleteThisImage ( filePathArray, fromPage ) {
+        // python deletes the files and reports back what is really gone, all list and DB cleanup happens in removeDeletedFilesFromLists
+        deleteRequestSourcePage = fromPage
+        py.deleteFilesFunction( filePathArray )
+    }
+
+    function removeDeletedFilesFromLists ( deletedPathArray ) {
+        var fromPage = deleteRequestSourcePage
+        deleteRequestSourcePage = ""
+
+        // remove from DB, checks automatically if available or not, and scrub global image references so nothing keeps loading a dead path
+        for (var j = 0; j < deletedPathArray.length; j++) {
+            storageItem.removeAlbum(deletedPathArray[j])
+            storageItem.removeKeywords(deletedPathArray[j])
+            if (coverImagePath === deletedPathArray[j]) { coverImagePath = "" }
+            if (lastEditedImagePath === deletedPathArray[j]) { lastEditedImagePath = "" }
+            if (currentSlideshowImagePath === deletedPathArray[j] || currentSlideshowImagePath === "file://" + deletedPathArray[j]) { currentSlideshowImagePath = "" }
+        }
+        lastDeletedPathsArray = deletedPathArray // open pages prune their own image lists through this
+
+        // bugfix: if there are too many images 2 delete, the list counting takes too long and blocks UI, we therefore just call a complete rescan to fill up lists
+        if (deletedPathArray.length >= imagesWorkload2Rescan) {
+            clearAllLists()
+            py.scanForImages()
+            return
+        }
+
+        var deletedPathsMap = ({})
+        for (j = 0; j < deletedPathArray.length; j++) {
+            deletedPathsMap[deletedPathArray[j]] = true
+        }
+
+        // remove from main image list
+        for (var i = idListModelImages.count -1; i >= 0; --i) {
+            if (deletedPathsMap[idListModelImages.get(i).filePath] === true) {
+                idListModelImages.remove(i)
+            }
+        }
+
+        // remove from current album list
+        for (var k = idListModelImagesAlbum.count -1; k >= 0; --k) {
+            if (deletedPathsMap[idListModelImagesAlbum.get(k).filePath] === true) {
+                idListModelImagesAlbum.remove(k)
+            }
+        }
+
+        // remove from current folder list
+        for ( var o = idListModelImagesFolder.count -1; o >= 0; --o) {
+            if (deletedPathsMap[idListModelImagesFolder.get(o).filePath] === true) {
+                idListModelImagesFolder.remove(o)
+            }
+        }
+
+        // possibly remove from search results list as well
+        for ( var l = idListModelSearch.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelSearch.get(l).filePath] === true) {
+                idListModelSearch.remove(l)
+            }
+        }
+
+        // possibly remove from favourites list as well
+        for ( l = idListModelFavourites.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelFavourites.get(l).filePath] === true) {
+                idListModelFavourites.remove(l)
+            }
+        }
+
+        // possibly remove from the filtered timeline as well
+        for ( l = idListModelTimelineFiltered.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelTimelineFiltered.get(l).filePath] === true) {
+                idListModelTimelineFiltered.remove(l)
+            }
+        }
+
+        // possibly remove from the duplicates results as well
+        for ( l = idListModelDuplicates.count -1; l >= 0; --l) {
+            if (deletedPathsMap[idListModelDuplicates.get(l).filePath] === true) {
+                idListModelDuplicates.remove(l)
+            }
+        }
+
+        // positions into idListModelImages shifted, re-map the stored indexes so eg. set-album keeps hitting the right image
+        remapBaseIndexes()
+
+        // re-count items still left, search results should be kept - empty albums and folders drop out of the rebuilt models automatically
+        countDistinctAlbums()
+        countDistinctFolders()
+        randomizeDistinctFoldersArray()
+
+        // close album- or folder-page, if it was the last image available there
+        if ((fromPage === "albumPage") && (idListModelImagesAlbum.count < 1)) { pageStack.pop() }
+        if ((fromPage === "folderPage") && (idListModelImagesFolder.count < 1)) { pageStack.pop() }
+
+        // the app cover may have shown one of the deleted images
+        randomCoverImage()
     }
 
     function updateAllLists_isFavourite( fromPage, action, filePathArray ) {
@@ -1790,6 +2917,20 @@ Page {
                     idListModelSearch.setProperty(l, "isFavourite", valueIsFavourite)
                 }
             }
+
+            // possibly update the filtered timeline as well
+            for (l = 0; l < idListModelTimelineFiltered.count; l++) {
+                if (idListModelTimelineFiltered.get(l).filePath === filePath) {
+                    idListModelTimelineFiltered.setProperty(l, "isFavourite", valueIsFavourite)
+                }
+            }
+
+            // possibly update the duplicates results as well
+            for (l = 0; l < idListModelDuplicates.count; l++) {
+                if (idListModelDuplicates.get(l).filePath === filePath) {
+                    idListModelDuplicates.setProperty(l, "isFavourite", valueIsFavourite)
+                }
+            }
         }
         countDistinctAlbums()
     }
@@ -1805,9 +2946,15 @@ Page {
                 }
             }
             // case search album
-            if (currentNameOrFolder === standardSearchAlbum) {
+            else if (currentNameOrFolder === standardSearchAlbum) {
                 for (i = 0; i < idListModelSearch.count; i++) {
                     imagePathsList = imagePathsList + (idListModelSearch.get(i).filePath).toString() + "|||"
+                }
+            }
+            // case duplicates album
+            else if (currentNameOrFolder === standardDuplicatesAlbum) {
+                for (i = 0; i < idListModelDuplicates.count; i++) {
+                    imagePathsList = imagePathsList + (idListModelDuplicates.get(i).filePath).toString() + "|||"
                 }
             }
             // all other albums
@@ -1852,7 +2999,18 @@ Page {
     }
 
     function unselectAll() {
-        //console.log("fake function, called from bannerResize.hide(), but does nothing here, only on albumPage")
+        for (var i = 0; i < idListModelImages.count; i++) {
+            if (idListModelImages.get(i).selected === true) {
+                idListModelImages.setProperty(i, "selected", false)
+            }
+        }
+        for (i = 0; i < idListModelTimelineFiltered.count; i++) {
+            if (idListModelTimelineFiltered.get(i).selected === true) {
+                idListModelTimelineFiltered.setProperty(i, "selected", false)
+            }
+        }
+        multiSelectActive = false
+        timelineSelectedTotal = 0
     }
 
     function randomCoverImage() {
