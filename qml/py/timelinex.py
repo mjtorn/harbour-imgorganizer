@@ -41,7 +41,7 @@ extensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.tif', '.TIF', 
 exifEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.tif', '.tiff', '.TIF', '.TIFF')
 iptcEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG')
 exifCacheVersion = 1                # bump when the cached tuple layout changes -> forces a clean cache rebuild
-dHashCacheVersion = 1               # bump when the perceptual hash layout changes -> forces a clean cache rebuild
+dHashCacheVersion = 2               # bump when the perceptual hash layout changes -> forces a clean cache rebuild
 
 
 
@@ -432,6 +432,9 @@ def buildImageDHash ( filePath ):
     # 64 bit perceptual difference hash, visually identical re-encodes get the same value
     img = Image.open(filePath)
     img.draft('L', (72, 72)) # decodes jpgs at reduced scale, much faster, no-op for other formats
+    # hash the picture as it is shown, not as it happens to be stored: a photo lying sideways with an
+    # orientation tag is the same picture, and the thumbnails, the viewer and gif making all agree on that
+    img = ImageOps.exif_transpose(img)
     img = img.convert('L').resize( (9, 8), Image.LANCZOS ) # same filter as ANTIALIAS, the name survives newer pillow versions
     pixelData = list(img.getdata())
     img.close()
