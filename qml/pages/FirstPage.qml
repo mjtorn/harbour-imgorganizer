@@ -471,15 +471,55 @@ Page {
                     bannerRebuildHashes.notify( imageCount )
                 }
             });
-            setHandler('returnDuplicateImages', function(duplicateGroups, distanceFromReference) {
+            setHandler('returnDuplicateImages', function(duplicateGroups, distanceFromReference, unreadablePathsByReason) {
                 idListModelDuplicates.clear()
                 var pathIndexMap = ({})
                 for (var i = 0; i < idListModelImages.count; i++) {
                     pathIndexMap[idListModelImages.get(i).filePath] = i
                 }
+
+                // groups and unreadable files both take their place from the timeline, so they are
+                // collected with the position they sort by and appended in that one order
+                var orderedEntries = []
                 for (var g = 0; g < duplicateGroups.length; g++) {
+                    var groupPaths = []
+                    var firstBaseIndex = -1
                     for (var m = 0; m < duplicateGroups[g].length; m++) {
-                        var baseIndex = pathIndexMap[duplicateGroups[g][m]]
+                        var memberIndex = pathIndexMap[duplicateGroups[g][m]]
+                        if (memberIndex !== undefined) {
+                            groupPaths.push(duplicateGroups[g][m])
+                            if (firstBaseIndex < 0 || memberIndex < firstBaseIndex) { firstBaseIndex = memberIndex }
+                        }
+                    }
+                    if (groupPaths.length > 0) {
+                        orderedEntries.push({ "sortIndex" : firstBaseIndex, "groupNumber" : g, "paths" : groupPaths })
+                    }
+                }
+                // one group per failure reason: every empty file is the same kind of broken as the
+                // next one. they get negative numbers so the badge and the pruning can tell them apart
+                // from a real group, and so they are never renumbered among them
+                var brokenGroupNumber = -2
+                for (var reason in unreadablePathsByReason) {
+                    var brokenPaths = []
+                    var firstBrokenIndex = -1
+                    var reasonPaths = unreadablePathsByReason[reason]
+                    for (var u = 0; u < reasonPaths.length; u++) {
+                        var unreadableIndex = pathIndexMap[reasonPaths[u]]
+                        if (unreadableIndex !== undefined) {
+                            brokenPaths.push(reasonPaths[u])
+                            if (firstBrokenIndex < 0 || unreadableIndex < firstBrokenIndex) { firstBrokenIndex = unreadableIndex }
+                        }
+                    }
+                    if (brokenPaths.length > 0) {
+                        orderedEntries.push({ "sortIndex" : firstBrokenIndex, "groupNumber" : brokenGroupNumber, "paths" : brokenPaths })
+                        brokenGroupNumber = brokenGroupNumber - 1
+                    }
+                }
+                orderedEntries.sort(function(a, b) { return a.sortIndex - b.sortIndex })
+
+                for (var e = 0; e < orderedEntries.length; e++) {
+                    for (var p = 0; p < orderedEntries[e].paths.length; p++) {
+                        var baseIndex = pathIndexMap[orderedEntries[e].paths[p]]
                         if (baseIndex !== undefined) {
                             var imageItem = idListModelImages.get(baseIndex)
                             idListModelDuplicates.append({
@@ -497,8 +537,8 @@ Page {
                                 "timestampSource" : imageItem.timestampSource,
                                 "isFavourite" : imageItem.isFavourite,
                                 "listModelImages_baseIndex" : baseIndex,
-                                "duplicateGroup" : g,
-                                "duplicateDistance" : (distanceFromReference[duplicateGroups[g][m]] !== undefined) ? distanceFromReference[duplicateGroups[g][m]] : -1
+                                "duplicateGroup" : orderedEntries[e].groupNumber,
+                                "duplicateDistance" : (distanceFromReference[orderedEntries[e].paths[p]] !== undefined) ? distanceFromReference[orderedEntries[e].paths[p]] : -1
                             })
                         }
                     }
@@ -2261,11 +2301,13 @@ Page {
         var membersPerGroup = ({})
         for (var i = 0; i < idListModelDuplicates.count; i++) {
             var groupNumber = idListModelDuplicates.get(i).duplicateGroup
-            membersPerGroup[groupNumber] = (membersPerGroup[groupNumber] === undefined) ? 1 : membersPerGroup[groupNumber] + 1
+            if (groupNumber >= 0) { // a negative one is an unreadable file: a row of its own, not a group
+                membersPerGroup[groupNumber] = (membersPerGroup[groupNumber] === undefined) ? 1 : membersPerGroup[groupNumber] + 1
+            }
         }
         var droppedAny = false
         for (i = idListModelDuplicates.count -1; i >= 0; --i) {
-            if (membersPerGroup[idListModelDuplicates.get(i).duplicateGroup] < 2) {
+            if (idListModelDuplicates.get(i).duplicateGroup >= 0 && membersPerGroup[idListModelDuplicates.get(i).duplicateGroup] < 2) {
                 idListModelDuplicates.remove(i)
                 droppedAny = true
             }
@@ -2275,12 +2317,14 @@ Page {
         var nextGroupNumber = 0
         for (i = 0; i < idListModelDuplicates.count; i++) {
             var oldNumber = idListModelDuplicates.get(i).duplicateGroup
-            if (newNumberForGroup[oldNumber] === undefined) {
-                newNumberForGroup[oldNumber] = nextGroupNumber
-                nextGroupNumber = nextGroupNumber + 1
-            }
-            if (newNumberForGroup[oldNumber] !== oldNumber) {
-                idListModelDuplicates.setProperty(i, "duplicateGroup", newNumberForGroup[oldNumber])
+            if (oldNumber >= 0) { // the negative ones are not groups, they have nothing to number
+                if (newNumberForGroup[oldNumber] === undefined) {
+                    newNumberForGroup[oldNumber] = nextGroupNumber
+                    nextGroupNumber = nextGroupNumber + 1
+                }
+                if (newNumberForGroup[oldNumber] !== oldNumber) {
+                    idListModelDuplicates.setProperty(i, "duplicateGroup", newNumberForGroup[oldNumber])
+                }
             }
         }
         // the survivor was not deleted, so nothing else would take its copy out of an open duplicates page

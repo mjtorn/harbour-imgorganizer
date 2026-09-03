@@ -445,6 +445,21 @@ def buildImageDHash ( filePath ):
     return dHash
 
 
+def classifyUnreadableFile ( filePath, failure ):
+    # files that fail the same way belong together: an empty file is like every other empty file and
+    # a cut off download like every other cut off download, so the reason is what groups them
+    try:
+        if os.path.getsize(filePath) == 0:
+            return "empty"
+    except:
+        return "unreadable"
+    if "truncated" in str(failure):
+        return "truncated"
+    if type(failure).__name__ == "UnidentifiedImageError":
+        return "notAnImage"
+    return "unreadable"
+
+
 def findDuplicateImages ( filePathList, tolerance, rebuildAllowed ):
     tolerance = int(tolerance) # qml hands numbers over as floats, and the chunk count below indexes with it
     # load the whole dhash cache once, any load problem -> rebuild from scratch, that keeps the cache clean
@@ -470,6 +485,7 @@ def findDuplicateImages ( filePathList, tolerance, rebuildAllowed ):
     someHashCounter = 0
     hashByPath = {}
     newCacheEntries = {}
+    unreadablePathsByReason = {} # zero byte, truncated, not an image at all - no fingerprint, grouped by reason
     for filePath in filePathList:
         someHashCounter += 1
         if someHashCounter % 25 == 0 or someHashCounter == imagesTotalAmount:
@@ -482,8 +498,9 @@ def findDuplicateImages ( filePathList, tolerance, rebuildAllowed ):
                 imageDHash = buildImageDHash( filePath )
                 hashByPath[filePath] = imageDHash
                 newCacheEntries[filePath] = (statResult.st_mtime, imageDHash)
-        except: # unreadable file -> just skip it
-            pass
+        except Exception as failure: # nothing to be made of this file, report it unless it simply vanished
+            if os.path.exists(filePath):
+                unreadablePathsByReason.setdefault(classifyUnreadableFile(filePath, failure), []).append(filePath)
 
     # add fresh hashes to the cache and drop entries of deleted files
     scannedPathsSet = set(filePathList)
@@ -585,7 +602,7 @@ def findDuplicateImages ( filePathList, tolerance, rebuildAllowed ):
         for filePath in pathGroup[1:]:
             distanceFromReference[filePath] = bin(referenceHash ^ hashByPath[filePath]).count("1")
 
-    pyotherside.send('returnDuplicateImages', duplicateGroups, distanceFromReference)
+    pyotherside.send('returnDuplicateImages', duplicateGroups, distanceFromReference, unreadablePathsByReason)
 
 
 def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):

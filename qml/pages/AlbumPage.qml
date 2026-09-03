@@ -666,14 +666,16 @@ Page {
                 Label {
                     // the group number tells which tiles belong together, the distance tells how far
                     // apart they are - a near group chains, so a member can sit beyond the tolerance
-                    visible: (currentAlbum === standardDuplicatesAlbum) && (duplicateGroup >= 0)
+                    visible: (currentAlbum === standardDuplicatesAlbum) && (duplicateGroup >= 0 || duplicateGroup <= -2)
                     anchors.bottom: parent.bottom // the favourite icon owns the upper left corner
                     anchors.left: parent.left
                     leftPadding: Theme.paddingSmall
                     rightPadding: Theme.paddingSmall
                     color: Theme.primaryColor
                     font.pixelSize: Theme.fontSizeTiny
-                    text: "#" + (duplicateGroup + 1) + ((infoDuplicateTolerance !== 0 && duplicateDistance >= 0) ? ("  Δ" + duplicateDistance) : "")
+                    // a negative group is a set of files nothing can read, no distance to show for those
+                    text: (duplicateGroup <= -2) ? "!"
+                          : ("#" + (duplicateGroup + 1) + ((infoDuplicateTolerance !== 0 && duplicateDistance >= 0) ? ("  Δ" + duplicateDistance) : ""))
 
                     Rectangle {
                         z: -1
