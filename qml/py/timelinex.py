@@ -400,6 +400,10 @@ def scanForImages (folders2scanHOME, folders2scanEXTERN, sdCards2scanEXTERN, sho
 def getFileInfoList(filteredFilePathList, showDirection, creationModificationDate, findExifAlbum):
     fileInfoList = scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum)
 
+    # settle equal timestamps by path first: sorting is stable, so this survives the sort below and
+    # decides the ties that the filesystem's own walk order used to decide differently on every start
+    fileInfoList.sort(key=itemgetter(1))
+
     # sort according to date time direction
     if "0" in showDirection:
         fileInfoList.sort(key=itemgetter(0), reverse=True) # sort list of tuples by first item, requires import itemgetter

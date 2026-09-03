@@ -2529,11 +2529,44 @@ Page {
         idListModelFavourites.clear()
         idListModelFavourites.append(reversedFavouritesArray)
 
-        remapBaseIndexes()
+        // the duplicates results take their order from this list, so they turn around with it instead
+        // of sitting in the old direction until the next search. reversing keeps every group together,
+        // it only flips the groups among themselves and the images inside them
+        var reversedDuplicatesArray = []
+        for (i = idListModelDuplicates.count -1; i >= 0; --i) {
+            var duplicateItem = idListModelDuplicates.get(i)
+            reversedDuplicatesArray.push({
+                "creationDateMS" : duplicateItem.creationDateMS,
+                "filePath" : duplicateItem.filePath,
+                "monthYear" : duplicateItem.monthYear,
+                "day" : duplicateItem.day,
+                "folderPath" : duplicateItem.folderPath,
+                "fileName" : duplicateItem.fileName,
+                "estimatedSize" : duplicateItem.estimatedSize,
+                "album" : duplicateItem.album,
+                "selected" : false,
+                "exifInfo" : duplicateItem.exifInfo,
+                "isSearchResult" : duplicateItem.isSearchResult,
+                "timestampSource" : duplicateItem.timestampSource,
+                "isFavourite" : duplicateItem.isFavourite,
+                "listModelImages_baseIndex" : duplicateItem.listModelImages_baseIndex,
+                "duplicateGroup" : duplicateItem.duplicateGroup,
+                "duplicateDistance" : duplicateItem.duplicateDistance
+            })
+        }
+        idListModelDuplicates.clear()
+        idListModelDuplicates.append(reversedDuplicatesArray)
+
+        remapBaseIndexes() // re-maps the stored positions and renumbers the groups into the new order
 
         // rebuild an active filter in the new order
         if (timelineAlbumFilter !== "") {
             setTimelineAlbumFilter( timelineAlbumFilter )
+        }
+
+        // an open DUPLICATES page shows a copy of those rows, so it needs the turned around ones
+        if (currentAlbum === standardDuplicatesAlbum) {
+            getImagesInAlbum( standardDuplicatesAlbum )
         }
 
         // scroll back so the previously centered image stays centered, its position mirrors in a reversed list
