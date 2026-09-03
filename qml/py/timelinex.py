@@ -817,8 +817,13 @@ def changeCachedPaths ( cacheFilePath, cacheVersionWanted, removedPathList, rena
         pass
 
 
-def removeFromExifCache ( removedPathList ):
+def forgetDeletedPaths ( removedPathList ):
+    # both caches are keyed by path, so a deleted file leaves both of them at once - the dhash
+    # entries used to linger until a duplicate search happened to notice the file was gone
+    if len(removedPathList) == 0:
+        return
     changeCachedPaths( exifCachePath(), exifCacheVersion, removedPathList, [] )
+    changeCachedPaths( dHashCachePath(), dHashCacheVersion, removedPathList, [] )
 
 
 def deleteFilesFunction ( deletePathArray ):
@@ -838,7 +843,7 @@ def deleteFilesFunction ( deletePathArray ):
                 failedPathList.append( deletePath )
             else: # was already gone -> report as deleted so QML cleans its lists anyway
                 deletedPathList.append( deletePath )
-    removeFromExifCache( deletedPathList )
+    forgetDeletedPaths( deletedPathList )
     # QML removes the returned paths from all lists and the DB, or triggers a full rescan for big batches
     pyotherside.send('returnDeletedFiles', deletedPathList, failedPathList)
 
