@@ -49,6 +49,8 @@ Page {
     property int imageInspectionCounter : 0 // bumped when a finding arrived, the viewer reacts to the change
     property string pendingTimelineJumpPath : "" // the tapped image was not scanned in yet, the jump retries after the scan
     property bool pendingDuplicateSearch : false // "Refresh duplicates" rescans first, the duplicate search chains after the scan
+    property int pendingRebuildImageCount : 0 // how many images the offered fingerprint rebuild would read
+    property int rebuildPromptCounter : 0 // bumped when python asks for a rebuild, a pushed page watches it
 
     Connections {
         // a counter avoids resetting the source inside its own change handler, which is a binding loop
@@ -146,6 +148,9 @@ Page {
     }
     BannerToAlbum {
         id: bannerToAlbum
+    }
+    BannerRebuildHashes {
+        id: bannerRebuildHashes
     }
     BannerRename {
         id: bannerRename
@@ -458,6 +463,14 @@ Page {
                 }
                 removeDeletedFilesFromLists(deletedPathArray)
             });
+            setHandler('duplicateCacheNeedsRebuild', function(imageCount) {
+                finishedLoading = true // no search is running while the offer is on screen
+                pendingRebuildImageCount = imageCount
+                rebuildPromptCounter = rebuildPromptCounter + 1 // a counter, an open album page listens for it
+                if (pageStack.depth === 1) {
+                    bannerRebuildHashes.notify( imageCount )
+                }
+            });
             setHandler('returnDuplicateImages', function(duplicateGroups, distanceFromReference) {
                 idListModelDuplicates.clear()
                 var pathIndexMap = ({})
@@ -670,8 +683,8 @@ Page {
         function deleteFilesFunction( deletePathArray ) {
             call("timelinex.deleteFilesFunction", [ deletePathArray ])
         }
-        function findDuplicateImages( allPathsArray, tolerance ) {
-            call("timelinex.findDuplicateImages", [ allPathsArray, tolerance ])
+        function findDuplicateImages( allPathsArray, tolerance, rebuildAllowed ) {
+            call("timelinex.findDuplicateImages", [ allPathsArray, tolerance, rebuildAllowed ])
         }
         function createAnimatedGif( gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ) {
             call("timelinex.createAnimatedGif", [ gifPathsArray, frameDurationMS, targetStorageMedia, targetFolder, gifFileName ])
@@ -2313,14 +2326,15 @@ Page {
         dropLonelyDuplicateGroups() // pruning above may have left a group with a single member
     }
 
-    function runDuplicateSearch() {
-        // hashing every image takes a while on the first run, later runs reuse the cached hashes
+    function runDuplicateSearch( rebuildAllowed ) {
+        // hashing every image takes a while on the first run, later runs reuse the cached hashes.
+        // rebuildAllowed is what the rebuild prompt answers with, everyone else leaves it out
         var allPathsArray = []
         for (var i = 0; i < idListModelImages.count; i++) {
             allPathsArray.push(idListModelImages.get(i).filePath)
         }
         finishedLoading = false
-        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : infoDuplicateDistance )
+        py.findDuplicateImages( allPathsArray, (infoDuplicateTolerance === 0) ? 0 : infoDuplicateDistance, (rebuildAllowed === true) )
     }
 
     function toggleDuplicateTolerance() {

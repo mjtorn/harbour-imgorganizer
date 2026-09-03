@@ -442,17 +442,26 @@ def buildImageDHash ( filePath ):
     return dHash
 
 
-def findDuplicateImages ( filePathList, tolerance ):
+def findDuplicateImages ( filePathList, tolerance, rebuildAllowed ):
     tolerance = int(tolerance) # qml hands numbers over as floats, and the chunk count below indexes with it
     # load the whole dhash cache once, any load problem -> rebuild from scratch, that keeps the cache clean
     cachedHashDict = {}
+    cacheWasStale = False
     try:
         with open(dHashCachePath(), 'rb') as cacheFile:
             cacheVersion, cachedHashDict = pickle.load(cacheFile)
-        if cacheVersion != dHashCacheVersion:
+        if cacheVersion != dHashCacheVersion: # an app update changed how images are fingerprinted
             cachedHashDict = {}
+            cacheWasStale = True
     except:
         cachedHashDict = {}
+
+    # a stale cache means every image has to be read again, which someone used to instant results
+    # deserves to hear about first. a missing or unreadable cache just gets rebuilt, nobody expects
+    # the first search of all to be quick
+    if cacheWasStale is True and rebuildAllowed is not True:
+        pyotherside.send('duplicateCacheNeedsRebuild', len(filePathList))
+        return
 
     imagesTotalAmount = len(filePathList)
     someHashCounter = 0

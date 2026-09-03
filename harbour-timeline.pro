@@ -28,6 +28,7 @@ DISTFILES += qml/harbour-timeline.qml \
     qml/pages/BannerFixFileType.qml \
     qml/pages/BannerGif.qml \
     qml/pages/BannerPaint.qml \
+    qml/pages/BannerRebuildHashes.qml \
     qml/pages/BannerRename.qml \
     qml/pages/BannerRenameFile.qml \
     qml/pages/BannerResize.qml \

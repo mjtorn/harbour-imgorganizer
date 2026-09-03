@@ -33,6 +33,18 @@ Page {
     BannerRenameFile {
         id: bannerRenameFileFromAlbum
     }
+    BannerRebuildHashes {
+        id: bannerRebuildHashesFromAlbum
+    }
+    Connections {
+        // a search started from here, eg. the tolerance slider, so the offer belongs on this page
+        target: page
+        onRebuildPromptCounterChanged: {
+            if (idAlbumPage.status === PageStatus.Active) {
+                bannerRebuildHashesFromAlbum.notify( pendingRebuildImageCount )
+            }
+        }
+    }
 
     Column {
         // pinned to the page, so whatever is in here stays put while the grid scrolls. with nothing
