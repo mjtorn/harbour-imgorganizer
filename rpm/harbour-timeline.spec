@@ -10,8 +10,8 @@ Name:       harbour-timeline
 %define __provides_exclude_from ^%{_datadir}/.*$
 
 Summary:    ImgOrganizer
-Version:    1.0
-Release:    5
+Version:    1.1.0
+Release:    1
 Group:      Qt/Qt
 License:    GPL-3.0-only
 URL:        https://github.com/yajo10/harbour-imgorganizer

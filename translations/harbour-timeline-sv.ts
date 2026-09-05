@@ -177,6 +177,17 @@
     </message>
 </context>
 <context>
+    <name>BannerRebuildHashes</name>
+    <message>
+        <source>Duplicate matching improved</source>
+        <translation>Dublettmatchning förbättrad</translation>
+    </message>
+    <message>
+        <source>This reads %1 images once more, a few minutes. Later searches are fast again.</source>
+        <translation>Detta läser %1 bilder en gång till, några minuter. Senare sökningar är snabba igen.</translation>
+    </message>
+</context>
+<context>
     <name>BannerRename</name>
     <message>
         <source>new</source>

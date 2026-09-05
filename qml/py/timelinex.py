@@ -41,7 +41,7 @@ extensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.tif', '.TIF', 
 exifEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG', '.tif', '.tiff', '.TIF', '.TIFF')
 iptcEnabledExtensions = ('.jpg', '.JPG', '.jpeg', '.JPEG')
 exifCacheVersion = 1                # bump when the cached tuple layout changes -> forces a clean cache rebuild
-dHashCacheVersion = 1               # bump when the perceptual hash layout changes -> forces a clean cache rebuild
+dHashCacheVersion = 2               # bump when the perceptual hash layout changes -> forces a clean cache rebuild
 
 
 
@@ -400,6 +400,10 @@ def scanForImages (folders2scanHOME, folders2scanEXTERN, sdCards2scanEXTERN, sho
 def getFileInfoList(filteredFilePathList, showDirection, creationModificationDate, findExifAlbum):
     fileInfoList = scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum)
 
+    # settle equal timestamps by path first: sorting is stable, so this survives the sort below and
+    # decides the ties that the filesystem's own walk order used to decide differently on every start
+    fileInfoList.sort(key=itemgetter(1))
+
     # sort according to date time direction
     if "0" in showDirection:
         fileInfoList.sort(key=itemgetter(0), reverse=True) # sort list of tuples by first item, requires import itemgetter
@@ -428,6 +432,9 @@ def buildImageDHash ( filePath ):
     # 64 bit perceptual difference hash, visually identical re-encodes get the same value
     img = Image.open(filePath)
     img.draft('L', (72, 72)) # decodes jpgs at reduced scale, much faster, no-op for other formats
+    # hash the picture as it is shown, not as it happens to be stored: a photo lying sideways with an
+    # orientation tag is the same picture, and the thumbnails, the viewer and gif making all agree on that
+    img = ImageOps.exif_transpose(img)
     img = img.convert('L').resize( (9, 8), Image.LANCZOS ) # same filter as ANTIALIAS, the name survives newer pillow versions
     pixelData = list(img.getdata())
     img.close()
@@ -438,22 +445,47 @@ def buildImageDHash ( filePath ):
     return dHash
 
 
-def findDuplicateImages ( filePathList, tolerance ):
+def classifyUnreadableFile ( filePath, failure ):
+    # files that fail the same way belong together: an empty file is like every other empty file and
+    # a cut off download like every other cut off download, so the reason is what groups them
+    try:
+        if os.path.getsize(filePath) == 0:
+            return "empty"
+    except:
+        return "unreadable"
+    if "truncated" in str(failure):
+        return "truncated"
+    if type(failure).__name__ == "UnidentifiedImageError":
+        return "notAnImage"
+    return "unreadable"
+
+
+def findDuplicateImages ( filePathList, tolerance, rebuildAllowed ):
     tolerance = int(tolerance) # qml hands numbers over as floats, and the chunk count below indexes with it
     # load the whole dhash cache once, any load problem -> rebuild from scratch, that keeps the cache clean
     cachedHashDict = {}
+    cacheWasStale = False
     try:
         with open(dHashCachePath(), 'rb') as cacheFile:
             cacheVersion, cachedHashDict = pickle.load(cacheFile)
-        if cacheVersion != dHashCacheVersion:
+        if cacheVersion != dHashCacheVersion: # an app update changed how images are fingerprinted
             cachedHashDict = {}
+            cacheWasStale = True
     except:
         cachedHashDict = {}
+
+    # a stale cache means every image has to be read again, which someone used to instant results
+    # deserves to hear about first. a missing or unreadable cache just gets rebuilt, nobody expects
+    # the first search of all to be quick
+    if cacheWasStale is True and rebuildAllowed is not True:
+        pyotherside.send('duplicateCacheNeedsRebuild', len(filePathList))
+        return
 
     imagesTotalAmount = len(filePathList)
     someHashCounter = 0
     hashByPath = {}
     newCacheEntries = {}
+    unreadablePathsByReason = {} # zero byte, truncated, not an image at all - no fingerprint, grouped by reason
     for filePath in filePathList:
         someHashCounter += 1
         if someHashCounter % 25 == 0 or someHashCounter == imagesTotalAmount:
@@ -466,8 +498,9 @@ def findDuplicateImages ( filePathList, tolerance ):
                 imageDHash = buildImageDHash( filePath )
                 hashByPath[filePath] = imageDHash
                 newCacheEntries[filePath] = (statResult.st_mtime, imageDHash)
-        except: # unreadable file -> just skip it
-            pass
+        except Exception as failure: # nothing to be made of this file, report it unless it simply vanished
+            if os.path.exists(filePath):
+                unreadablePathsByReason.setdefault(classifyUnreadableFile(filePath, failure), []).append(filePath)
 
     # add fresh hashes to the cache and drop entries of deleted files
     scannedPathsSet = set(filePathList)
@@ -569,7 +602,7 @@ def findDuplicateImages ( filePathList, tolerance ):
         for filePath in pathGroup[1:]:
             distanceFromReference[filePath] = bin(referenceHash ^ hashByPath[filePath]).count("1")
 
-    pyotherside.send('returnDuplicateImages', duplicateGroups, distanceFromReference)
+    pyotherside.send('returnDuplicateImages', duplicateGroups, distanceFromReference, unreadablePathsByReason)
 
 
 def scanExifs(filteredFilePathList, creationModificationDate, findExifAlbum):
@@ -817,8 +850,13 @@ def changeCachedPaths ( cacheFilePath, cacheVersionWanted, removedPathList, rena
         pass
 
 
-def removeFromExifCache ( removedPathList ):
+def forgetDeletedPaths ( removedPathList ):
+    # both caches are keyed by path, so a deleted file leaves both of them at once - the dhash
+    # entries used to linger until a duplicate search happened to notice the file was gone
+    if len(removedPathList) == 0:
+        return
     changeCachedPaths( exifCachePath(), exifCacheVersion, removedPathList, [] )
+    changeCachedPaths( dHashCachePath(), dHashCacheVersion, removedPathList, [] )
 
 
 def deleteFilesFunction ( deletePathArray ):
@@ -838,7 +876,7 @@ def deleteFilesFunction ( deletePathArray ):
                 failedPathList.append( deletePath )
             else: # was already gone -> report as deleted so QML cleans its lists anyway
                 deletedPathList.append( deletePath )
-    removeFromExifCache( deletedPathList )
+    forgetDeletedPaths( deletedPathList )
     # QML removes the returned paths from all lists and the DB, or triggers a full rescan for big batches
     pyotherside.send('returnDeletedFiles', deletedPathList, failedPathList)
 
